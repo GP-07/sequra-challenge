@@ -7,19 +7,8 @@ from decimal import Decimal
 import factory
 from factory.django import DjangoModelFactory
 
-from disbursements.models import Disbursement, DisbursementPackage, Merchant, Order
-
-
-class MerchantFactory(DjangoModelFactory):
-    class Meta:
-        model = Merchant
-
-    id = factory.LazyFunction(uuid.uuid4)
-    reference = factory.Sequence(lambda n: f"merchant_{n}")
-    email = factory.LazyAttribute(lambda merchant: f"info@{merchant.reference}.com")
-    live_on = date(2023, 1, 1)
-    disbursement_frequency = Merchant.Frequency.DAILY
-    minimum_monthly_fee = Decimal("0.00")
+from disbursements.models import Disbursement, DisbursementPackage, Order
+from merchants.tests.factories import MerchantFactory
 
 
 class OrderFactory(DjangoModelFactory):

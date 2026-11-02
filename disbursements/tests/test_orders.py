@@ -5,9 +5,10 @@ from decimal import Decimal
 
 import pytest
 
+from disbursements.exceptions import InvalidOrder
 from disbursements.models import Order
-from disbursements.services.orders import InvalidOrder, create_order
-from disbursements.tests.factories import MerchantFactory
+from disbursements.services.orders import create_order
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

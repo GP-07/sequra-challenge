@@ -1,110 +1,50 @@
-"""Comandos manuales: carga de CSV, generate_orders, backfill y reintento manual."""
+"""Comandos manuales de disbursements: carga de orders, generate_orders, backfill y reintento manual."""
 
-import shutil
 from datetime import date
 from decimal import Decimal
-from io import StringIO
 from pathlib import Path
 
 import pytest
-from django.core.management import CommandError, call_command
+from django.conf import settings
+from django.core.management import CommandError
 
-from disbursements.models import Disbursement, DisbursementPackage, Merchant, MonthlyFee, Order
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, MerchantFactory, OrderFactory
+from core.tests.helpers import put_in_import_dir, run_command
+from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee, Order
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 
 # CSVs de prueba, con el mismo formato que los del challenge.
 DATA_DIR = Path(__file__).parent / "data"
-
-
-@pytest.fixture
-def import_dir(tmp_path, settings):
-    settings.IMPORT_DIR = tmp_path
-    return tmp_path
-
-
-def put_in_import_dir(import_dir, data_file, name):
-    """Copia un CSV de tests/data a la carpeta de importación con el nombre que espera el comando."""
-    shutil.copy(DATA_DIR / data_file, import_dir / name)
+MERCHANTS_DATA_DIR = settings.BASE_DIR / "merchants" / "tests" / "data"
 
 
 @pytest.fixture
 def merchants_csv(import_dir):
-    put_in_import_dir(import_dir, "merchants.csv", "merchants.csv")
+    put_in_import_dir(import_dir, MERCHANTS_DATA_DIR / "merchants.csv", "merchants.csv")
 
 
 @pytest.fixture
 def orders_csv(import_dir):
-    put_in_import_dir(import_dir, "orders.csv", "orders.csv")
-
-
-def run(*args):
-    out = StringIO()
-    call_command(*args, stdout=out)
-    return out.getvalue()
-
-
-# --- load merchants ---
-
-def test_load_merchants_missing_file_asks_to_put_it_in_the_import_folder(import_dir):
-    with pytest.raises(CommandError) as error:
-        run("load_merchants", "merchants.csv")
-    assert str(import_dir) in str(error.value)
-
-
-def test_load_merchants_loads_the_csv_from_the_import_folder(merchants_csv):
-    output = run("load_merchants", "merchants.csv")
-
-    merchant = Merchant.objects.get(reference="deckow_gibson")
-    assert merchant.disbursement_frequency == Merchant.Frequency.WEEKLY
-    assert merchant.live_on == date(2023, 2, 1)
-    assert merchant.minimum_monthly_fee == Decimal("29.00")
-    assert "2" in output
-
-
-def test_load_merchants_is_idempotent_by_id(merchants_csv):
-    run("load_merchants", "merchants.csv")
-    run("load_merchants", "merchants.csv")
-
-    assert Merchant.objects.count() == 2
-
-
-def test_load_merchants_invalid_rows_are_skipped_and_reported(import_dir):
-    # Uuid, frecuencia, fecha y minimum negativo inválidos.
-    put_in_import_dir(import_dir, "merchants_with_invalid_rows.csv", "merchants.csv")
-
-    output = run("load_merchants", "merchants.csv")
-
-    # padberg_group tiene minimum 0.0: es válido y se carga.
-    assert set(Merchant.objects.values_list("reference", flat=True)) == {"padberg_group", "deckow_gibson"}
-    assert "invalid" in output.lower()
-
-
-def test_load_merchants_missing_minimum_is_loaded_as_zero(import_dir):
-    put_in_import_dir(import_dir, "merchants_with_missing_minimum.csv", "merchants.csv")
-
-    run("load_merchants", "merchants.csv")
-
-    merchant = Merchant.objects.get(reference="no_minimum")
-    assert merchant.minimum_monthly_fee == Decimal("0.00")
+    put_in_import_dir(import_dir, DATA_DIR / "orders.csv", "orders.csv")
 
 
 # --- load orders ---
 
 @pytest.fixture
 def merchants(merchants_csv):
-    run("load_merchants", "merchants.csv")
+    run_command("load_merchants", "merchants.csv")
 
 
 def test_load_orders_missing_file_asks_to_put_it_in_the_import_folder(merchants, import_dir):
     with pytest.raises(CommandError) as error:
-        run("load_orders", "orders.csv")
+        run_command("load_orders", "orders.csv")
     assert str(import_dir) in str(error.value)
 
 
 def test_load_orders_loads_orders_with_their_commission(merchants, orders_csv):
-    run("load_orders", "orders.csv")
+    run_command("load_orders", "orders.csv")
 
     assert Order.objects.count() == 3
     assert Order.objects.get(id="e653f3e14bc4").commission_fee == Decimal("0.97")
@@ -113,17 +53,17 @@ def test_load_orders_loads_orders_with_their_commission(merchants, orders_csv):
 
 
 def test_load_orders_is_idempotent_by_id(merchants, orders_csv):
-    run("load_orders", "orders.csv")
-    run("load_orders", "orders.csv")
+    run_command("load_orders", "orders.csv")
+    run_command("load_orders", "orders.csv")
 
     assert Order.objects.count() == 3
 
 
 def test_load_orders_invalid_rows_are_skipped_and_reported(merchants, import_dir):
     # Merchant desconocido, monto negativo, monto no numérico y fecha inválidos.
-    put_in_import_dir(import_dir, "orders_with_invalid_rows.csv", "orders.csv")
+    put_in_import_dir(import_dir, DATA_DIR / "orders_with_invalid_rows.csv", "orders.csv")
 
-    output = run("load_orders", "orders.csv")
+    output = run_command("load_orders", "orders.csv")
 
     assert Order.objects.count() == 3
     assert "invalid" in output.lower()
@@ -134,7 +74,7 @@ def test_load_orders_invalid_rows_are_skipped_and_reported(merchants, import_dir
 def test_generate_orders_creates_random_orders_for_existing_merchants():
     MerchantFactory(reference="padberg_group")
 
-    run("generate_orders", "--count", "5", "--date", "2023-02-07")
+    run_command("generate_orders", "--count", "5", "--date", "2023-02-07")
 
     assert Order.objects.filter(created_at=date(2023, 2, 7)).count() == 5
     assert not Order.objects.filter(commission_fee__lte=0).exists()
@@ -144,13 +84,13 @@ def test_generate_orders_creates_random_orders_for_existing_merchants():
 
 @pytest.fixture
 def loaded(merchants_csv, orders_csv):
-    run("load_merchants", "merchants.csv")
-    run("load_orders", "orders.csv")
+    run_command("load_merchants", "merchants.csv")
+    run_command("load_orders", "orders.csv")
 
 
 def test_backfill_creates_packages_and_processes_them(loaded):
     # deckow_gibson es WEEKLY desde un miércoles: su primer pago es el 8/2.
-    output = run("create_disbursements_for_range", "--from", "2023-02-01", "--to", "2023-02-08")
+    output = run_command("create_disbursements_for_range", "--from", "2023-02-01", "--to", "2023-02-08")
 
     assert set(Disbursement.objects.values_list("reference", flat=True)) == {
         "padberg_group_for_20230201",
@@ -166,7 +106,7 @@ def test_backfill_creates_packages_and_processes_them(loaded):
 
 
 def test_backfill_monthly_fees_for_range(loaded):
-    run("calculate_monthly_fees_for_range", "--from", "2023-02", "--to", "2023-02")
+    run_command("calculate_monthly_fees_for_range", "--from", "2023-02", "--to", "2023-02")
 
     # padberg_group tiene minimum 0: no se le cobra.
     assert MonthlyFee.objects.count() == 1
@@ -195,7 +135,7 @@ def test_retry_reprocesses_a_non_retryable_package_after_fixing_the_data():
         disbursements=[disbursement], status=DisbursementPackage.Status.FAILED, attempts=1, is_retryable=False
     )
 
-    run("retry_disbursement_package", str(package.id))
+    run_command("retry_disbursement_package", str(package.id))
 
     package.refresh_from_db()
     assert package.status == DisbursementPackage.Status.COMPLETED
@@ -206,7 +146,7 @@ def test_retry_reprocesses_a_non_retryable_package_after_fixing_the_data():
 
 def test_retry_unknown_package():
     with pytest.raises(CommandError):
-        run("retry_disbursement_package", "999999")
+        run_command("retry_disbursement_package", "999999")
 
 
 def test_retry_completed_package_is_skipped_and_reported():
@@ -219,7 +159,7 @@ def test_retry_completed_package_is_skipped_and_reported():
         disbursements=[disbursement], status=DisbursementPackage.Status.COMPLETED, attempts=1
     )
 
-    output = run("retry_disbursement_package", str(package.id))
+    output = run_command("retry_disbursement_package", str(package.id))
 
     assert "already completed" in output.lower()
     package.refresh_from_db()
@@ -250,7 +190,7 @@ def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
         disbursements=[failed, completed], status=DisbursementPackage.Status.FAILED, attempts=1, is_retryable=False
     )
 
-    output = run("retry_disbursements", str(failed.id), str(completed.id), "999999")
+    output = run_command("retry_disbursements", str(failed.id), str(completed.id), "999999")
 
     failed.refresh_from_db()
     assert failed.status == Disbursement.Status.COMPLETED
@@ -267,4 +207,4 @@ def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
 
 def test_retry_disbursements_requires_at_least_one_id():
     with pytest.raises(CommandError):
-        run("retry_disbursements")
+        run_command("retry_disbursements")

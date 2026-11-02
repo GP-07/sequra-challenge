@@ -13,7 +13,8 @@ from django.db import OperationalError
 from disbursements.models import Disbursement, DisbursementPackage
 from disbursements.services.package_processing import process_disbursement_package
 from disbursements.services.reprocessing import reprocess_disbursements
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, MerchantFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

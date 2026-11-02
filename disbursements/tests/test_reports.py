@@ -10,7 +10,8 @@ import pytest
 
 from disbursements.models import Disbursement, MonthlyFee
 from disbursements.services.reports import yearly_report
-from disbursements.tests.factories import DisbursementFactory, MerchantFactory
+from disbursements.tests.factories import DisbursementFactory
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

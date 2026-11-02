@@ -1,22 +1,6 @@
 from django.db import models
 
-MONEY = {"max_digits": 14, "decimal_places": 2}
-
-
-class Merchant(models.Model):
-    class Frequency(models.TextChoices):
-        DAILY = "DAILY"
-        WEEKLY = "WEEKLY"
-
-    id = models.UUIDField(primary_key=True)
-    reference = models.CharField(max_length=255, unique=True)
-    email = models.EmailField()
-    live_on = models.DateField()
-    disbursement_frequency = models.CharField(max_length=10, choices=Frequency.choices)
-    minimum_monthly_fee = models.DecimalField(**MONEY)
-
-    def __str__(self):
-        return self.reference
+from core.constants import MONEY
 
 
 class DisbursementPackage(models.Model):
@@ -42,7 +26,7 @@ class Disbursement(models.Model):
         FAILED = "FAILED"
         REQUIRES_ATTENTION = "REQUIRES_ATTENTION"
 
-    merchant = models.ForeignKey(Merchant, on_delete=models.PROTECT, related_name="disbursements")
+    merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="disbursements")
     payment_date = models.DateField()
     reference = models.CharField(max_length=255, unique=True)
     natural_key_hash = models.CharField(max_length=64, unique=True)
@@ -69,7 +53,7 @@ class Disbursement(models.Model):
 
 class Order(models.Model):
     id = models.CharField(max_length=64, primary_key=True)
-    merchant = models.ForeignKey(Merchant, on_delete=models.PROTECT, related_name="orders")
+    merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="orders")
     amount = models.DecimalField(**MONEY)
     commission_fee = models.DecimalField(**MONEY)
     created_at = models.DateField()
@@ -84,7 +68,7 @@ class Order(models.Model):
 
 
 class MonthlyFee(models.Model):
-    merchant = models.ForeignKey(Merchant, on_delete=models.PROTECT, related_name="monthly_fees")
+    merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="monthly_fees")
     # Primer día del mes que cubre la fee.
     month = models.DateField()
     commissions_amount = models.DecimalField(**MONEY)

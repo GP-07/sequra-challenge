@@ -10,13 +10,15 @@ from datetime import date, timedelta
 
 import pytest
 
-from disbursements.models import Disbursement, Merchant, Order
+from disbursements.models import Disbursement, Order
 from disbursements.services.disbursement_creation import (
     create_disbursements,
     create_disbursements_for_range,
     natural_key_hash,
 )
-from disbursements.tests.factories import DisbursementFactory, MerchantFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from merchants.models import Merchant
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

@@ -19,13 +19,15 @@ from django.core.management import call_command
 from django.db import OperationalError
 from django.utils import timezone
 
-from disbursements.models import Disbursement, DisbursementPackage, Merchant, MonthlyFee, Order
+from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee, Order
 from disbursements.services.disbursement_creation import create_disbursements
 from disbursements.services.monthly_fees import calculate_monthly_fees
 from disbursements.services.package_checks import check_disbursement_packages
 from disbursements.services.package_processing import process_disbursement_package
 from disbursements.services.packages import create_disbursement_packages
-from disbursements.tests.factories import DisbursementFactory, MerchantFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from merchants.models import Merchant
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

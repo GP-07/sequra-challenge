@@ -7,7 +7,8 @@ import pytest
 
 from disbursements.models import Disbursement, DisbursementPackage
 from disbursements.services.packages import create_disbursement_packages
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, MerchantFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

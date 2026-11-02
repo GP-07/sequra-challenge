@@ -1,11 +1,6 @@
-from dataclasses import dataclass, field
 from datetime import date
 
-
-@dataclass
-class CreationResult:
-    created: list = field(default_factory=list)
-    skipped_existing: int = 0
+from disbursements.data_classes import CreationResult
 
 
 def natural_key_hash(merchant_id, payment_date: date) -> str:

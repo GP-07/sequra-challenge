@@ -16,6 +16,8 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "huey.contrib.djhuey",
+    "core",
+    "merchants",
     "disbursements",
 ]
 

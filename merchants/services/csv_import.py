@@ -1,0 +1,79 @@
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+from django.db import transaction
+
+from core.csv_utils import parse_date, parse_email, parse_required, parse_uuid, read_rows
+from core.data_classes import ImportResult
+from core.exceptions import InvalidRow
+from merchants.constants import MERCHANT_CSV_COLUMNS
+from merchants.models import Merchant
+
+
+def import_merchants(path: Path) -> ImportResult:
+    """Carga los merchants nuevos del CSV. Los que ya existen (por id) no se tocan.
+
+    Las filas inválidas se saltean y se informan con su número de línea; no frenan la carga del resto.
+    """
+    result = ImportResult()
+    parsed = {}  # id → (número de línea, merchant)
+    references = set()
+    for line_number, row in read_rows(path, MERCHANT_CSV_COLUMNS):
+        try:
+            merchant = parse_merchant(row)
+            if merchant.id in parsed or merchant.reference in references:
+                raise InvalidRow("id or reference repeated in the file")
+        except InvalidRow as error:
+            result.invalid.append((line_number, str(error)))
+            continue
+        parsed[merchant.id] = (line_number, merchant)
+        references.add(merchant.reference)
+
+    # Dos queries para todo el archivo, no una por fila.
+    existing_ids = set(Merchant.objects.filter(id__in=parsed).values_list("id", flat=True))
+    used_references = set(Merchant.objects.filter(reference__in=references).values_list("reference", flat=True))
+    new_merchants = []
+    for line_number, merchant in parsed.values():
+        if merchant.id in existing_ids:
+            result.skipped_existing += 1
+        elif merchant.reference in used_references:
+            result.invalid.append((line_number, f"reference '{merchant.reference}' already used by another merchant"))
+        else:
+            new_merchants.append(merchant)
+
+    with transaction.atomic():
+        Merchant.objects.bulk_create(new_merchants)
+    result.created = len(new_merchants)
+    return result
+
+
+def parse_merchant(row: dict) -> Merchant:
+    return Merchant(
+        id=parse_uuid(row["id"]),
+        reference=parse_required(row["reference"], "reference"),
+        email=parse_email(row["email"]),
+        live_on=parse_date(row["live_on"], "live_on"),
+        disbursement_frequency=parse_frequency(row["disbursement_frequency"]),
+        minimum_monthly_fee=parse_minimum_monthly_fee(row["minimum_monthly_fee"]),
+    )
+
+
+def parse_frequency(value):
+    value = (value or "").strip()
+    if value not in Merchant.Frequency.values:
+        raise InvalidRow(f"invalid disbursement_frequency '{value}'")
+    return value
+
+
+def parse_minimum_monthly_fee(value):
+    """Vacío se carga como 0; negativo es inválido."""
+    value = (value or "").strip()
+    if not value:
+        return Decimal("0.00")
+    try:
+        amount = Decimal(value)
+    except InvalidOperation:
+        raise InvalidRow(f"invalid minimum_monthly_fee '{value}'")
+    if not amount.is_finite() or amount < 0:
+        raise InvalidRow(f"invalid minimum_monthly_fee '{value}'")
+    return amount.quantize(Decimal("0.01"))

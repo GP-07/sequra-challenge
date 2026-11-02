@@ -5,9 +5,11 @@ from decimal import Decimal
 
 import pytest
 
-from disbursements.models import Merchant, MonthlyFee
+from disbursements.models import MonthlyFee
 from disbursements.services.monthly_fees import calculate_monthly_fees, calculate_monthly_fees_for_range
-from disbursements.tests.factories import DisbursementFactory, MerchantFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from merchants.models import Merchant
+from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db
 

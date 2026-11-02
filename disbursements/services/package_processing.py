@@ -16,16 +16,7 @@ Con disbursement_ids se procesan solo esos disbursements del paquete (reprocess 
 estado del paquete se calcula con todos sus disbursements.
 """
 
-from dataclasses import dataclass
-from decimal import Decimal
-
-
-@dataclass(frozen=True)
-class DisbursementTotals:
-    disbursement_id: int
-    order_count: int
-    gross_amount: Decimal
-    commission_fee_amount: Decimal
+from disbursements.data_classes import DisbursementTotals
 
 
 def mark_package_as_processing(package_id: int) -> bool:

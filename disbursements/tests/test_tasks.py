@@ -6,8 +6,7 @@ from unittest import mock
 import pytest
 
 from disbursements import tasks
-from disbursements.services.package_checks import CheckResult
-from disbursements.services.packages import PackagingResult
+from disbursements.data_classes import CheckResult, PackagingResult
 
 NOW = datetime(2023, 2, 8, 0, 5, tzinfo=timezone.utc)
 
