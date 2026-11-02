@@ -1,0 +1,4 @@
+Django>=5.2,<5.3
+psycopg[binary]>=3.2,<3.3
+huey>=2.5,<2.6
+redis>=5,<6

@@ -1,0 +1,8 @@
+id;merchant_reference;amount;created_at
+e653f3e14bc4;padberg_group;102.29;2023-02-01
+20b674c93ea6;padberg_group;433.21;2023-02-01
+0f2f0a1c5b1a;deckow_gibson;10.50;2023-02-02
+aaa111;unknown_merchant;10.00;2023-02-01
+bbb222;padberg_group;-3.00;2023-02-01
+ccc333;padberg_group;abc;2023-02-01
+ddd444;padberg_group;10.00;not-a-date
