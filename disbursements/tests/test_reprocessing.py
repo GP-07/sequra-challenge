@@ -13,8 +13,9 @@ from django.db import OperationalError
 from disbursements.models import Disbursement, DisbursementPackage
 from disbursements.services.package_processing import process_disbursement_package
 from disbursements.services.reprocessing import reprocess_disbursements
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
 from merchants.tests.factories import MerchantFactory
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -26,7 +27,7 @@ SERVICE = "disbursements.services.package_processing"
 
 def disbursement_with_one_order(reference, amount, commission_fee):
     merchant = MerchantFactory(reference=reference)
-    order = OrderFactory(merchant=merchant, created_at=ORDERS_DATE, amount=amount, commission_fee=commission_fee)
+    order = OrderFactory(merchant=merchant, order_creation_date=ORDERS_DATE, amount=amount, commission_fee=commission_fee)
     return DisbursementFactory(merchant=merchant, payment_date=PAYMENT_DATE, orders=[order])
 
 

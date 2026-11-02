@@ -7,21 +7,9 @@ from decimal import Decimal
 import factory
 from factory.django import DjangoModelFactory
 
-from disbursements.models import Disbursement, DisbursementPackage, Order
+from disbursements.models import Disbursement, DisbursementPackage
 from merchants.tests.factories import MerchantFactory
-
-
-class OrderFactory(DjangoModelFactory):
-    """commission_fee es explícita para no depender del cálculo."""
-
-    class Meta:
-        model = Order
-
-    id = factory.Sequence(lambda n: f"order{n:07d}")
-    merchant = factory.SubFactory(MerchantFactory)
-    amount = Decimal("100.00")
-    commission_fee = Decimal("0.95")
-    created_at = date(2023, 2, 7)
+from orders.models import Order
 
 
 class DisbursementFactory(DjangoModelFactory):

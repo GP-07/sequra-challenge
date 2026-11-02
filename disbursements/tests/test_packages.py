@@ -7,8 +7,9 @@ import pytest
 
 from disbursements.models import Disbursement, DisbursementPackage
 from disbursements.services.packages import create_disbursement_packages
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
 from merchants.tests.factories import MerchantFactory
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -18,7 +19,7 @@ ORDERS_DATE = date(2023, 2, 7)
 
 def disbursement_with(reference, order_count, payment_date=PAYMENT_DATE, **fields):
     merchant = MerchantFactory(reference=reference)
-    orders = OrderFactory.create_batch(order_count, merchant=merchant, created_at=ORDERS_DATE)
+    orders = OrderFactory.create_batch(order_count, merchant=merchant, order_creation_date=ORDERS_DATE)
     return DisbursementFactory(merchant=merchant, payment_date=payment_date, orders=orders, **fields)
 
 

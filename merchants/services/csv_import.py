@@ -3,6 +3,7 @@ from pathlib import Path
 
 from django.db import transaction
 
+from core.constants import CENTS
 from core.csv_utils import parse_date, parse_email, parse_required, parse_uuid, read_rows
 from core.data_classes import ImportResult
 from core.exceptions import InvalidRow
@@ -76,4 +77,4 @@ def parse_minimum_monthly_fee(value):
         raise InvalidRow(f"invalid minimum_monthly_fee '{value}'")
     if not amount.is_finite() or amount < 0:
         raise InvalidRow(f"invalid minimum_monthly_fee '{value}'")
-    return amount.quantize(Decimal("0.01"))
+    return amount.quantize(CENTS)

@@ -14,8 +14,9 @@ from django.db import OperationalError
 
 from disbursements.models import Disbursement, DisbursementPackage
 from disbursements.services.package_processing import process_disbursement_package
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
 from merchants.tests.factories import MerchantFactory
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -30,10 +31,10 @@ def package():
     merchant_a = MerchantFactory(reference="a_merchant")
     merchant_b = MerchantFactory(reference="b_merchant")
     orders_a = [
-        OrderFactory(merchant=merchant_a, created_at=ORDERS_DATE, amount="100.00", commission_fee="0.95"),
-        OrderFactory(merchant=merchant_a, created_at=ORDERS_DATE, amount="433.21", commission_fee="3.68"),
+        OrderFactory(merchant=merchant_a, order_creation_date=ORDERS_DATE, amount="100.00", commission_fee="0.95"),
+        OrderFactory(merchant=merchant_a, order_creation_date=ORDERS_DATE, amount="433.21", commission_fee="3.68"),
     ]
-    orders_b = [OrderFactory(merchant=merchant_b, created_at=ORDERS_DATE, amount="10.50", commission_fee="0.11")]
+    orders_b = [OrderFactory(merchant=merchant_b, order_creation_date=ORDERS_DATE, amount="10.50", commission_fee="0.11")]
     disbursements = [
         DisbursementFactory(merchant=merchant_a, payment_date=PAYMENT_DATE, orders=orders_a),
         DisbursementFactory(merchant=merchant_b, payment_date=PAYMENT_DATE, orders=orders_b),

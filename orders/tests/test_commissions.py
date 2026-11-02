@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from disbursements.services.commissions import calculate_commission_fee
+from orders.services.commissions import calculate_commission_fee
 
 
 @pytest.mark.parametrize(

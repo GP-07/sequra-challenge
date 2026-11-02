@@ -19,15 +19,17 @@ from django.core.management import call_command
 from django.db import OperationalError
 from django.utils import timezone
 
-from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee, Order
+from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee
 from disbursements.services.disbursement_creation import create_disbursements
 from disbursements.services.monthly_fees import calculate_monthly_fees
 from disbursements.services.package_checks import check_disbursement_packages
 from disbursements.services.package_processing import process_disbursement_package
 from disbursements.services.packages import create_disbursement_packages
-from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
+from orders.models import Order
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -98,11 +100,11 @@ def weekly_merchant():
 
 @pytest.fixture
 def orders_for_all_merchants(daily_merchant, other_daily_merchant, weekly_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY, amount="100.00", commission_fee="0.95")
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY, amount="433.21", commission_fee="3.68")
-    OrderFactory(merchant=other_daily_merchant, created_at=YESTERDAY, amount="10.50", commission_fee="0.11")
-    OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, 1), amount="200.00", commission_fee="1.90")
-    OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, 6), amount="50.00", commission_fee="0.48")
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY, amount="100.00", commission_fee="0.95")
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY, amount="433.21", commission_fee="3.68")
+    OrderFactory(merchant=other_daily_merchant, order_creation_date=YESTERDAY, amount="10.50", commission_fee="0.11")
+    OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 1), amount="200.00", commission_fee="1.90")
+    OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 6), amount="50.00", commission_fee="0.48")
 
 
 # --- caso 1 ---
@@ -152,8 +154,8 @@ def test_only_merchants_with_orders_get_a_disbursement(daily_merchant, weekly_me
 
     Se crean disbursements solo para los que tienen orders y se procesan OK.
     """
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY, amount="100.00", commission_fee="0.95")
-    OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, 1), amount="200.00", commission_fee="1.90")
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY, amount="100.00", commission_fee="0.95")
+    OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 1), amount="200.00", commission_fee="1.90")
     # Un DAILY y un WEEKLY (también de miércoles) sin orders.
     MerchantFactory(reference="rempel_ltd", disbursement_frequency=DAILY, live_on=date(2023, 1, 1))
     MerchantFactory(reference="kunze_inc", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 4))
@@ -187,9 +189,9 @@ def test_delayed_orders_are_paid_in_the_next_payment_and_flagged(
     has_processed_delayed_orders para saber que pagaron algo de otra fecha.
     """
     # Orders de fechas viejas que entraron tarde y nunca se pagaron: fuera de la ventana de esta corrida.
-    delayed_daily = OrderFactory(merchant=daily_merchant, created_at=date(2023, 2, 3), amount="20.00", commission_fee="0.20")
+    delayed_daily = OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, 3), amount="20.00", commission_fee="0.20")
     # deckow_gibson cobra del 1/2 al 7/2: la del 25/1 es de la semana anterior.
-    delayed_weekly = OrderFactory(merchant=weekly_merchant, created_at=date(2023, 1, 25), amount="30.00", commission_fee="0.30")
+    delayed_weekly = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 1, 25), amount="30.00", commission_fee="0.30")
 
     run_payment_day(PAYMENT_DATE)
 
@@ -414,33 +416,33 @@ def test_monthly_fees_count_every_order_of_the_month_whatever_the_state_of_its_d
     live_on = date(2022, 6, 1)
 
     processed_ok = MerchantFactory(reference="processed_ok", live_on=live_on, minimum_monthly_fee="29.00")
-    order = OrderFactory(merchant=processed_ok, created_at=date(2023, 1, 10), amount="1176.47", commission_fee="10.00")
+    order = OrderFactory(merchant=processed_ok, order_creation_date=date(2023, 1, 10), amount="1176.47", commission_fee="10.00")
     DisbursementFactory(
         merchant=processed_ok, payment_date=date(2023, 1, 11), orders=[order], status=COMPLETED,
         gross_amount="1176.47", commission_fee_amount="10.00", disbursed_amount="1166.47",
     )
 
     processed_with_error = MerchantFactory(reference="processed_with_error", live_on=live_on, minimum_monthly_fee="29.00")
-    order = OrderFactory(merchant=processed_with_error, created_at=date(2023, 1, 10), amount="588.24", commission_fee="5.00")
+    order = OrderFactory(merchant=processed_with_error, order_creation_date=date(2023, 1, 10), amount="588.24", commission_fee="5.00")
     DisbursementFactory(
         merchant=processed_with_error, payment_date=date(2023, 1, 11), orders=[order], status=FAILED,
         error="Se esperaban 2 orders y hay 1.",
     )
 
     not_processed = MerchantFactory(reference="not_processed", live_on=live_on, minimum_monthly_fee="29.00")
-    order = OrderFactory(merchant=not_processed, created_at=date(2023, 1, 31), amount="470.59", commission_fee="4.00")
+    order = OrderFactory(merchant=not_processed, order_creation_date=date(2023, 1, 31), amount="470.59", commission_fee="4.00")
     DisbursementFactory(merchant=not_processed, payment_date=date(2023, 2, 1), orders=[order])
 
     not_disbursed = MerchantFactory(reference="not_disbursed", live_on=live_on, minimum_monthly_fee="29.00")
-    OrderFactory(merchant=not_disbursed, created_at=date(2023, 1, 31), amount="352.94", commission_fee="3.00")
+    OrderFactory(merchant=not_disbursed, order_creation_date=date(2023, 1, 31), amount="352.94", commission_fee="3.00")
 
     without_orders = MerchantFactory(reference="without_orders", live_on=live_on, minimum_monthly_fee="29.00")
 
     over_minimum = MerchantFactory(reference="over_minimum", live_on=live_on, minimum_monthly_fee="29.00")
-    OrderFactory(merchant=over_minimum, created_at=date(2023, 1, 10), amount="3529.41", commission_fee="30.00")
+    OrderFactory(merchant=over_minimum, order_creation_date=date(2023, 1, 10), amount="3529.41", commission_fee="30.00")
 
     without_minimum = MerchantFactory(reference="without_minimum", live_on=live_on, minimum_monthly_fee="0.00")
-    OrderFactory(merchant=without_minimum, created_at=date(2023, 1, 10), amount="100.00", commission_fee="0.95")
+    OrderFactory(merchant=without_minimum, order_creation_date=date(2023, 1, 10), amount="100.00", commission_fee="0.95")
 
     not_live_yet = MerchantFactory(reference="not_live_yet", live_on=date(2023, 2, 1), minimum_monthly_fee="29.00")
 

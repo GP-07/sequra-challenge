@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "huey.contrib.djhuey",
     "core",
     "merchants",
+    "orders",
     "disbursements",
 ]
 

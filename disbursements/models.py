@@ -51,22 +51,6 @@ class Disbursement(models.Model):
         ]
 
 
-class Order(models.Model):
-    id = models.CharField(max_length=64, primary_key=True)
-    merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="orders")
-    amount = models.DecimalField(**MONEY)
-    commission_fee = models.DecimalField(**MONEY)
-    created_at = models.DateField()
-    disbursement = models.ForeignKey(
-        Disbursement, null=True, blank=True, on_delete=models.PROTECT, related_name="orders"
-    )
-
-    class Meta:
-        indexes = [
-            models.Index(fields=["merchant", "created_at"], name="order_merchant_created_idx"),
-        ]
-
-
 class MonthlyFee(models.Model):
     merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="monthly_fees")
     # Primer día del mes que cubre la fee.

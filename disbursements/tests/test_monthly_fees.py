@@ -7,9 +7,10 @@ import pytest
 
 from disbursements.models import MonthlyFee
 from disbursements.services.monthly_fees import calculate_monthly_fees, calculate_monthly_fees_for_range
-from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -22,8 +23,8 @@ def merchant():
 
 
 def test_charges_what_is_left_to_reach_the_minimum(merchant):
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 10), commission_fee="10.00")
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 31), commission_fee="5.50")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 10), commission_fee="10.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 31), commission_fee="5.50")
 
     calculate_monthly_fees(JANUARY)
 
@@ -35,7 +36,7 @@ def test_charges_what_is_left_to_reach_the_minimum(merchant):
 
 @pytest.mark.parametrize("commissions", ["29.00", "40.00"])
 def test_nothing_is_charged_when_the_minimum_is_reached(merchant, commissions):
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 10), commission_fee=commissions)
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 10), commission_fee=commissions)
 
     calculate_monthly_fees(JANUARY)
 
@@ -52,9 +53,9 @@ def test_merchant_without_minimum_is_never_charged():
 
 
 def test_only_orders_created_in_that_month_count(merchant):
-    OrderFactory(merchant=merchant, created_at=date(2022, 12, 31), commission_fee="20.00")
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 15), commission_fee="10.00")
-    OrderFactory(merchant=merchant, created_at=date(2023, 2, 1), commission_fee="20.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2022, 12, 31), commission_fee="20.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 15), commission_fee="10.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 1), commission_fee="20.00")
 
     calculate_monthly_fees(JANUARY)
 
@@ -66,9 +67,9 @@ def test_only_orders_created_in_that_month_count(merchant):
 
 def test_orders_count_even_if_not_disbursed_yet(merchant):
     # Assumption: se usan las orders creadas en el mes, estén pagadas o no.
-    paid = OrderFactory(merchant=merchant, created_at=date(2023, 1, 10), commission_fee="10.00")
+    paid = OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 10), commission_fee="10.00")
     DisbursementFactory(merchant=merchant, payment_date=date(2023, 1, 11), orders=[paid])
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 31), commission_fee="10.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 31), commission_fee="10.00")
 
     calculate_monthly_fees(JANUARY)
 
@@ -81,7 +82,7 @@ def test_orders_count_even_if_not_disbursed_yet(merchant):
 def test_merchant_live_mid_month_pays_the_full_minimum():
     # Assumption: no se prorratea el primer mes.
     late = MerchantFactory(reference="late_merchant", live_on=date(2023, 1, 20), minimum_monthly_fee="29.00")
-    OrderFactory(merchant=late, created_at=date(2023, 1, 25), commission_fee="1.00")
+    OrderFactory(merchant=late, order_creation_date=date(2023, 1, 25), commission_fee="1.00")
 
     calculate_monthly_fees(JANUARY)
 
@@ -117,10 +118,10 @@ def test_running_twice_does_not_duplicate(merchant):
 
 def test_range_calculates_each_month_included(merchant):
     # Se cubren enero y febrero (ambos incluidos), que ya están cerrados.
-    OrderFactory(merchant=merchant, created_at=date(2023, 1, 10), commission_fee="10.00")
-    OrderFactory(merchant=merchant, created_at=date(2023, 2, 10), commission_fee="20.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 1, 10), commission_fee="10.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 10), commission_fee="20.00")
     # Marzo queda fuera del rango: no se calcula.
-    OrderFactory(merchant=merchant, created_at=date(2023, 3, 10), commission_fee="5.00")
+    OrderFactory(merchant=merchant, order_creation_date=date(2023, 3, 10), commission_fee="5.00")
 
     calculate_monthly_fees_for_range(date(2023, 1, 1), date(2023, 2, 1))
 
@@ -149,8 +150,8 @@ def test_daily_and_weekly_merchants_are_charged_the_same_way():
         live_on=date(2022, 6, 1),
         minimum_monthly_fee="15.00",
     )
-    OrderFactory(merchant=daily, created_at=date(2023, 1, 10), commission_fee="5.00")
-    OrderFactory(merchant=weekly, created_at=date(2023, 1, 10), commission_fee="5.00")
+    OrderFactory(merchant=daily, order_creation_date=date(2023, 1, 10), commission_fee="5.00")
+    OrderFactory(merchant=weekly, order_creation_date=date(2023, 1, 10), commission_fee="5.00")
 
     calculate_monthly_fees(JANUARY)
 

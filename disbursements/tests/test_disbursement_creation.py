@@ -10,15 +10,17 @@ from datetime import date, timedelta
 
 import pytest
 
-from disbursements.models import Disbursement, Order
+from disbursements.models import Disbursement
 from disbursements.services.disbursement_creation import (
     create_disbursements,
     create_disbursements_for_range,
     natural_key_hash,
 )
-from disbursements.tests.factories import DisbursementFactory, OrderFactory
+from disbursements.tests.factories import DisbursementFactory
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
+from orders.models import Order
+from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
@@ -44,8 +46,8 @@ def weekly_merchant():
 # --- daily ---
 
 def test_pays_the_orders_of_the_previous_day(daily_merchant):
-    order_1 = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
-    order_2 = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    order_1 = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
+    order_2 = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -59,7 +61,7 @@ def test_pays_the_orders_of_the_previous_day(daily_merchant):
 
 
 def test_reference_is_readable_with_the_date_of_the_orders(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -68,8 +70,8 @@ def test_reference_is_readable_with_the_date_of_the_orders(daily_merchant):
 
 
 def test_orders_of_the_payment_day_are_not_included(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
-    today_order = OrderFactory(merchant=daily_merchant, created_at=PAYMENT_DATE)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
+    today_order = OrderFactory(merchant=daily_merchant, order_creation_date=PAYMENT_DATE)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -84,8 +86,8 @@ def test_no_orders_means_no_disbursement(daily_merchant):
 
 
 def test_only_daily_merchants_are_processed(daily_merchant, weekly_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
-    weekly_order = OrderFactory(merchant=weekly_merchant, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
+    weekly_order = OrderFactory(merchant=weekly_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -96,8 +98,8 @@ def test_only_daily_merchants_are_processed(daily_merchant, weekly_merchant):
 
 def test_each_merchant_gets_its_own_disbursement(daily_merchant):
     other = MerchantFactory(reference="windler_and_sons", disbursement_frequency=DAILY)
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
-    OrderFactory(merchant=other, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
+    OrderFactory(merchant=other, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -107,8 +109,8 @@ def test_each_merchant_gets_its_own_disbursement(daily_merchant):
 # --- weekly ---
 
 def test_pays_the_closed_week_on_the_live_on_weekday(weekly_merchant):
-    first_day = OrderFactory(merchant=weekly_merchant, created_at=PAYMENT_DATE - timedelta(days=7))
-    last_day = OrderFactory(merchant=weekly_merchant, created_at=YESTERDAY)
+    first_day = OrderFactory(merchant=weekly_merchant, order_creation_date=PAYMENT_DATE - timedelta(days=7))
+    last_day = OrderFactory(merchant=weekly_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, WEEKLY)
 
@@ -122,8 +124,8 @@ def test_weekly_merchant_is_only_paid_on_its_own_weekday(weekly_merchant):
     # deckow_gibson tiene live_on un miércoles: su día de pago es el miércoles. La corrida del jueves 9/2
     # NO es una corrida de pago para él, así que no hace nada aunque tenga orders sin pagar.
     # Su siguiente día de pago es el miércoles 15/2, que paga los días cerrados del 8/2 al 14/2.
-    wednesday_order = OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, 8))
-    saturday_order = OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, 11))
+    wednesday_order = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 8))
+    saturday_order = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 11))
 
     create_disbursements(date(2023, 2, 9), WEEKLY)
 
@@ -142,8 +144,8 @@ def test_weekly_merchant_live_on_a_thursday_is_paid_on_thursdays():
     thursday_merchant = MerchantFactory(
         reference="thursday_merchant", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 5)
     )
-    wednesday_order = OrderFactory(merchant=thursday_merchant, created_at=date(2023, 2, 8))
-    saturday_order = OrderFactory(merchant=thursday_merchant, created_at=date(2023, 2, 11))
+    wednesday_order = OrderFactory(merchant=thursday_merchant, order_creation_date=date(2023, 2, 8))
+    saturday_order = OrderFactory(merchant=thursday_merchant, order_creation_date=date(2023, 2, 11))
 
     create_disbursements(date(2023, 2, 9), WEEKLY)
     create_disbursements(date(2023, 2, 16), WEEKLY)
@@ -157,8 +159,8 @@ def test_weekly_merchant_live_on_a_thursday_is_paid_on_thursdays():
 
 
 def test_only_weekly_merchants_are_processed(daily_merchant, weekly_merchant):
-    daily_order = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
-    OrderFactory(merchant=weekly_merchant, created_at=YESTERDAY)
+    daily_order = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
+    OrderFactory(merchant=weekly_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, WEEKLY)
 
@@ -170,7 +172,7 @@ def test_only_weekly_merchants_are_processed(daily_merchant, weekly_merchant):
 # --- idempotency and exactly once ---
 
 def test_running_twice_creates_a_single_disbursement(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
     first = Disbursement.objects.get(merchant=daily_merchant, payment_date=PAYMENT_DATE)
@@ -181,10 +183,10 @@ def test_running_twice_creates_a_single_disbursement(daily_merchant):
 
 
 def test_existing_disbursement_is_not_touched_and_late_orders_wait(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
     create_disbursements(PAYMENT_DATE, DAILY)
 
-    late_order = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    late_order = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
     create_disbursements(PAYMENT_DATE, DAILY)
 
     late_order.refresh_from_db()
@@ -195,7 +197,7 @@ def test_existing_disbursement_is_not_touched_and_late_orders_wait(daily_merchan
 
 def test_orders_already_disbursed_are_never_reassigned(daily_merchant):
     previous = DisbursementFactory(merchant=daily_merchant, payment_date=YESTERDAY)
-    disbursed = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY, disbursement=previous)
+    disbursed = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY, disbursement=previous)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -205,7 +207,7 @@ def test_orders_already_disbursed_are_never_reassigned(daily_merchant):
 
 
 def test_disbursement_is_saved_with_the_natural_key_hash_of_its_merchant_and_date(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -234,8 +236,8 @@ def test_natural_key_hash_changes_with_the_merchant_or_the_date(daily_merchant, 
 
 def test_delayed_order_goes_into_the_next_payment_and_is_flagged(daily_merchant, caplog):
     # Order del día 5 que entró tarde: el pago del 6 ya se hizo sin ella.
-    delayed = OrderFactory(merchant=daily_merchant, created_at=PAYMENT_DATE - timedelta(days=3))
-    on_time = OrderFactory(merchant=daily_merchant, created_at=YESTERDAY)
+    delayed = OrderFactory(merchant=daily_merchant, order_creation_date=PAYMENT_DATE - timedelta(days=3))
+    on_time = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
     with caplog.at_level(logging.WARNING):
         create_disbursements(PAYMENT_DATE, DAILY)
@@ -247,7 +249,7 @@ def test_delayed_order_goes_into_the_next_payment_and_is_flagged(daily_merchant,
 
 
 def test_delayed_order_alone_creates_a_disbursement(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=PAYMENT_DATE - timedelta(days=3))
+    OrderFactory(merchant=daily_merchant, order_creation_date=PAYMENT_DATE - timedelta(days=3))
 
     create_disbursements(PAYMENT_DATE, DAILY)
 
@@ -256,8 +258,8 @@ def test_delayed_order_alone_creates_a_disbursement(daily_merchant):
 
 
 def test_weekly_delayed_order_from_a_previous_week(weekly_merchant):
-    delayed = OrderFactory(merchant=weekly_merchant, created_at=PAYMENT_DATE - timedelta(days=10))
-    OrderFactory(merchant=weekly_merchant, created_at=YESTERDAY)
+    delayed = OrderFactory(merchant=weekly_merchant, order_creation_date=PAYMENT_DATE - timedelta(days=10))
+    OrderFactory(merchant=weekly_merchant, order_creation_date=YESTERDAY)
 
     create_disbursements(PAYMENT_DATE, WEEKLY)
 
@@ -279,8 +281,8 @@ def test_backfill_creates_daily_and_weekly_disbursements_on_the_right_dates(dail
     - Las 28 orders quedan asignadas y el servicio devuelve los 16 disbursements creados.
     """
     for day in range(1, 15):
-        OrderFactory(merchant=daily_merchant, created_at=date(2023, 2, day))
-        OrderFactory(merchant=weekly_merchant, created_at=date(2023, 2, day))
+        OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, day))
+        OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, day))
 
     result = create_disbursements_for_range(date(2023, 2, 2), date(2023, 2, 15))
 
@@ -295,8 +297,8 @@ def test_backfill_creates_daily_and_weekly_disbursements_on_the_right_dates(dail
 
 
 def test_backfill_run_twice_over_the_same_range_does_not_duplicate_disbursements(daily_merchant):
-    OrderFactory(merchant=daily_merchant, created_at=date(2023, 2, 1))
-    OrderFactory(merchant=daily_merchant, created_at=date(2023, 2, 2))
+    OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, 1))
+    OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, 2))
 
     create_disbursements_for_range(date(2023, 2, 2), date(2023, 2, 3))
     second = create_disbursements_for_range(date(2023, 2, 2), date(2023, 2, 3))
