@@ -12,10 +12,13 @@ from unittest import mock
 import pytest
 from django.db import OperationalError
 
-from disbursements.models import Disbursement, DisbursementPackage
-from disbursements.services.package_processing import process_disbursement_package
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
+from disbursement_packages.models import DisbursementPackage
+from disbursement_packages.services.package_processing import process_disbursement_package
+from disbursement_packages.tests.factories import DisbursementPackageFactory
+from disbursements.models import Disbursement
+from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
+from orders.models import Order
 from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
@@ -23,7 +26,7 @@ pytestmark = pytest.mark.django_db
 Status = DisbursementPackage.Status
 PAYMENT_DATE = date(2023, 2, 8)
 ORDERS_DATE = date(2023, 2, 7)
-SERVICE = "disbursements.services.package_processing"
+SERVICE = "disbursement_packages.services.package_processing"
 
 
 @pytest.fixture
@@ -89,8 +92,10 @@ def disbursements_snapshot(package):
 
 
 def test_failed_package_can_be_processed_again(package):
-    DisbursementPackage.objects.filter(id=package.id).update(status=Status.FAILED, attempts=1, is_retryable=True)
-    Disbursement.objects.filter(package=package).update(status=Disbursement.Status.FAILED)
+    DisbursementPackage.objects.filter(id=package.id).update(status=Status.FAILED, attempts=1)
+    Disbursement.objects.filter(package=package).update(
+        status=Disbursement.Status.FAILED, error="connection lost", is_retryable=True
+    )
 
     processed = process_disbursement_package(package.id)
 
@@ -100,6 +105,8 @@ def test_failed_package_can_be_processed_again(package):
     assert package.status == Status.COMPLETED
     assert package.attempts == 2
     assert not Disbursement.objects.exclude(status=Disbursement.Status.COMPLETED).exists()
+    # Al completarse se limpia el error de la corrida anterior.
+    assert list(Disbursement.objects.values_list("error", "is_retryable").distinct()) == [("", None)]
 
 
 @pytest.mark.parametrize(
@@ -119,11 +126,10 @@ def test_unexpected_error_rolls_back_and_fails_package_and_disbursements(package
 
     package.refresh_from_db()
     assert package.status == Status.FAILED
-    assert package.is_retryable is retryable
-    assert str(error) in package.error
     assert package.attempts == 1
     for disbursement in Disbursement.objects.filter(package=package):
         assert disbursement.status == Disbursement.Status.FAILED
+        assert disbursement.is_retryable is retryable
         assert str(error) in disbursement.error
         assert disbursement.gross_amount is None
 
@@ -136,9 +142,6 @@ def test_invalid_disbursement_does_not_undo_the_others(package):
 
     package.refresh_from_db()
     assert package.status == Status.FAILED
-    # Reintentar no sirve hasta que alguien corrija los datos.
-    assert package.is_retryable is False
-    assert package.error != ""
     a = Disbursement.objects.get(merchant__reference="a_merchant")
     assert a.status == Disbursement.Status.COMPLETED
     assert (a.gross_amount, a.commission_fee_amount, a.disbursed_amount) == (
@@ -150,7 +153,34 @@ def test_invalid_disbursement_does_not_undo_the_others(package):
     b = Disbursement.objects.get(merchant__reference="b_merchant")
     assert b.status == Disbursement.Status.FAILED
     assert "3" in b.error
+    # Reintentar no sirve hasta que alguien corrija los datos.
+    assert b.is_retryable is False
     assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (None, None, None)
+
+
+@pytest.mark.parametrize(
+    "amount, commission_fee, reason",
+    [
+        # Un dato corregido a mano que dejó la order con monto negativo.
+        ("-10.50", "0.11", "Negative amounts"),
+        # Comisiones mayores al bruto: se pagaría un monto negativo.
+        ("10.50", "20.00", "greater than the gross amount"),
+    ],
+)
+def test_disbursement_with_invalid_amounts_fails_and_does_not_undo_the_others(package, amount, commission_fee, reason):
+    Order.objects.filter(merchant__reference="b_merchant").update(amount=amount, commission_fee=commission_fee)
+
+    process_disbursement_package(package.id)
+
+    a = Disbursement.objects.get(merchant__reference="a_merchant")
+    assert a.status == Disbursement.Status.COMPLETED
+    b = Disbursement.objects.get(merchant__reference="b_merchant")
+    assert b.status == Disbursement.Status.FAILED
+    assert reason in b.error
+    assert b.is_retryable is False
+    assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (None, None, None)
+    package.refresh_from_db()
+    assert package.status == Status.FAILED
 
 
 def test_reprocessing_only_touches_what_is_not_completed(package):

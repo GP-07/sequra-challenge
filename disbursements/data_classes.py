@@ -9,25 +9,6 @@ class CreationResult:
 
 
 @dataclass
-class PackagingResult:
-    packages: list = field(default_factory=list)
-    requires_attention: list = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class DisbursementTotals:
-    disbursement_id: int
-    order_count: int
-    gross_amount: Decimal
-    commission_fee_amount: Decimal
-
-
-@dataclass
-class CheckResult:
-    to_retry: list = field(default_factory=list)
-
-
-@dataclass
 class ReprocessResult:
     processed: list = field(default_factory=list)
     # Ya estaban COMPLETED: no se tocan.
@@ -37,3 +18,11 @@ class ReprocessResult:
     # Todavía no tiene paquete: lo va a tomar el flujo normal.
     skipped_without_package: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class DisbursementTotals:
+    disbursement_id: int
+    order_count: int
+    gross_amount: Decimal
+    commission_fee_amount: Decimal

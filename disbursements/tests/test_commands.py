@@ -1,4 +1,4 @@
-"""Comandos manuales de disbursements: backfill y reintento manual."""
+"""Comandos manuales de disbursements: backfill y reintento manual por id de disbursement."""
 
 from datetime import date
 from decimal import Decimal
@@ -8,8 +8,10 @@ from django.conf import settings
 from django.core.management import CommandError
 
 from core.tests.helpers import put_in_import_dir, run_command
-from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
+from disbursement_packages.models import DisbursementPackage
+from disbursement_packages.tests.factories import DisbursementPackageFactory
+from disbursements.models import Disbursement, MonthlyFee
+from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
 from orders.models import Order
 from orders.tests.factories import OrderFactory
@@ -67,57 +69,6 @@ def test_backfill_monthly_fees_for_range(loaded):
     assert fee.amount == Decimal("28.89")
 
 
-# --- retry disbursement package ---
-
-def test_retry_reprocesses_a_non_retryable_package_after_fixing_the_data():
-    # Así queda un paquete tras una falla de datos: FAILED no retryable, porque reintentar
-    # automáticamente no sirve. Alguien ya corrigió el dato (order_count vuelve a coincidir) y lo
-    # reprocesa a mano: el retry manual no mira is_retryable.
-    merchant = MerchantFactory(reference="padberg_group")
-    order = OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 7))
-    disbursement = DisbursementFactory(
-        merchant=merchant,
-        payment_date=date(2023, 2, 8),
-        orders=[order],
-        status=Disbursement.Status.FAILED,
-        error="Se esperaban 2 orders y hay 1.",
-    )
-    package = DisbursementPackageFactory(
-        disbursements=[disbursement], status=DisbursementPackage.Status.FAILED, attempts=1, is_retryable=False
-    )
-
-    run_command("retry_disbursement_package", str(package.id))
-
-    package.refresh_from_db()
-    assert package.status == DisbursementPackage.Status.COMPLETED
-    disbursement.refresh_from_db()
-    assert disbursement.status == Disbursement.Status.COMPLETED
-    assert disbursement.error == ""
-
-
-def test_retry_unknown_package():
-    with pytest.raises(CommandError):
-        run_command("retry_disbursement_package", "999999")
-
-
-def test_retry_completed_package_is_skipped_and_reported():
-    merchant = MerchantFactory(reference="padberg_group")
-    order = OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 7))
-    disbursement = DisbursementFactory(
-        merchant=merchant, payment_date=date(2023, 2, 8), orders=[order], status=Disbursement.Status.COMPLETED
-    )
-    package = DisbursementPackageFactory(
-        disbursements=[disbursement], status=DisbursementPackage.Status.COMPLETED, attempts=1
-    )
-
-    output = run_command("retry_disbursement_package", str(package.id))
-
-    assert "already completed" in output.lower()
-    package.refresh_from_db()
-    assert package.status == DisbursementPackage.Status.COMPLETED
-    assert package.attempts == 1
-
-
 # --- retry disbursements ---
 
 def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
@@ -128,7 +79,8 @@ def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
         payment_date=date(2023, 2, 8),
         orders=[OrderFactory(merchant=padberg, order_creation_date=date(2023, 2, 7), amount="10.50", commission_fee="0.11")],
         status=Disbursement.Status.FAILED,
-        error="Se esperaban 2 orders y hay 1.",
+        error="Expected 2 orders but found 1.",
+        is_retryable=False,
     )
     deckow = MerchantFactory(reference="deckow_gibson")
     completed = DisbursementFactory(
@@ -138,7 +90,7 @@ def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
         status=Disbursement.Status.COMPLETED,
     )
     DisbursementPackageFactory(
-        disbursements=[failed, completed], status=DisbursementPackage.Status.FAILED, attempts=1, is_retryable=False
+        disbursements=[failed, completed], status=DisbursementPackage.Status.FAILED, attempts=1
     )
 
     output = run_command("retry_disbursements", str(failed.id), str(completed.id), "999999")

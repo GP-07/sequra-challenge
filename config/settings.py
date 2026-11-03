@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "core",
     "merchants",
     "orders",
+    "disbursement_packages",
     "disbursements",
 ]
 

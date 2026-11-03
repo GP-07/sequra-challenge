@@ -17,14 +17,14 @@ from unittest import mock
 import pytest
 from django.core.management import call_command
 from django.db import OperationalError
-from django.utils import timezone
 
-from disbursements.models import Disbursement, DisbursementPackage, MonthlyFee
+from disbursement_packages.models import DisbursementPackage
+from disbursement_packages.services.package_checks import check_disbursement_packages
+from disbursement_packages.services.package_creation import create_disbursement_packages
+from disbursement_packages.services.package_processing import process_disbursement_package
+from disbursements.models import Disbursement, MonthlyFee
 from disbursements.services.disbursement_creation import create_disbursements
 from disbursements.services.monthly_fees import calculate_monthly_fees
-from disbursements.services.package_checks import check_disbursement_packages
-from disbursements.services.package_processing import process_disbursement_package
-from disbursements.services.packages import create_disbursement_packages
 from disbursements.tests.factories import DisbursementFactory
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
@@ -41,7 +41,7 @@ FAILED = Disbursement.Status.FAILED
 # Miércoles.
 PAYMENT_DATE = date(2023, 2, 8)
 YESTERDAY = date(2023, 2, 7)
-SERVICE = "disbursements.services.package_processing"
+SERVICE = "disbursement_packages.services.package_processing"
 
 
 def create_payment_day(payment_date):
@@ -70,12 +70,12 @@ def snapshot():
         "disbursements": list(
             Disbursement.objects.order_by("id").values(
                 "id", "reference", "status", "package_id", "order_count", "has_processed_delayed_orders",
-                "error", "gross_amount", "commission_fee_amount", "disbursed_amount", "updated_at",
+                "error", "is_retryable", "gross_amount", "commission_fee_amount", "disbursed_amount", "updated_at",
             )
         ),
         "packages": list(
             DisbursementPackage.objects.order_by("id").values(
-                "id", "status", "order_count", "attempts", "is_retryable", "error", "updated_at"
+                "id", "status", "order_count", "attempts", "updated_at"
             )
         ),
         "orders": list(Order.objects.order_by("id").values("id", "amount", "commission_fee", "disbursement_id")),
@@ -144,7 +144,6 @@ def test_disbursements_of_daily_and_weekly_merchants_are_created_and_processed(
     assert package.status == DisbursementPackage.Status.COMPLETED
     assert package.order_count == 5
     assert package.attempts == 1
-    assert package.error == ""
 
 
 # --- caso 2 ---
@@ -263,15 +262,12 @@ def test_data_failure_leaves_the_valid_disbursements_completed_and_is_not_retrie
     Se valida cómo quedan disbursements, paquete y orders, y que el control no lo reintenta.
     """
     package = package_with_a_data_failure
-    # Los paquetes se crearon hoy (created_at es auto_now_add).
-    result = check_disbursement_packages(timezone.localdate(), is_last_run=False)
+    result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
 
     assert result.to_retry == []
     package.refresh_from_db()
     assert package.status == DisbursementPackage.Status.FAILED
-    assert package.is_retryable is False
     assert package.attempts == 1
-    assert package.error != ""
     padberg = disbursement_of(daily_merchant)
     assert padberg.status == COMPLETED
     assert padberg.error == ""
@@ -282,6 +278,7 @@ def test_data_failure_leaves_the_valid_disbursements_completed_and_is_not_retrie
     assert amounts(deckow) == (Decimal("250.00"), Decimal("2.38"), Decimal("247.62"))
     rempel = disbursement_of(other_daily_merchant)
     assert rempel.status == FAILED
+    assert rempel.is_retryable is False
     assert "3" in rempel.error
     assert amounts(rempel) == (None, None, None)
     # Las orders siguen asignadas a su disbursement, aunque haya fallado.
@@ -305,10 +302,10 @@ def test_data_failure_is_fixed_by_a_user_and_the_manual_retry_completes_the_pack
     package.refresh_from_db()
     assert package.status == DisbursementPackage.Status.COMPLETED
     assert package.attempts == 2
-    assert package.error == ""
     rempel = disbursement_of(other_daily_merchant)
     assert rempel.status == COMPLETED
     assert rempel.error == ""
+    assert rempel.is_retryable is None
     assert amounts(rempel) == (Decimal("10.50"), Decimal("0.11"), Decimal("10.39"))
     # Los que ya estaban COMPLETED no se vuelven a tocar.
     completed_after = [d for d in snapshot()["disbursements"] if d["id"] in {c["id"] for c in completed_before}]
@@ -345,18 +342,17 @@ def test_infrastructure_failure_fails_only_its_package_and_can_be_retried(
     """
     failing = packages_with_an_infrastructure_failure
 
-    result = check_disbursement_packages(timezone.localdate(), is_last_run=False)
+    result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
 
-    # 1 de 3 paquetes FAILED (33%) no supera el umbral: se reintenta.
+    # 1 de 3 disbursements del día FAILED (33%) no supera el umbral: se reintenta.
     assert result.to_retry == [failing.id]
     assert DisbursementPackage.objects.count() == 3
     failing.refresh_from_db()
     assert failing.status == DisbursementPackage.Status.FAILED
-    assert failing.is_retryable is True
     assert failing.attempts == 1
-    assert "connection lost" in failing.error
     padberg = disbursement_of(daily_merchant)
     assert padberg.status == FAILED
+    assert padberg.is_retryable is True
     assert "connection lost" in padberg.error
     assert amounts(padberg) == (None, None, None)
     rempel = disbursement_of(other_daily_merchant)
@@ -377,7 +373,7 @@ def test_infrastructure_failure_is_completed_by_the_automatic_retry(daily_mercha
     failing = packages_with_an_infrastructure_failure
     others_before = [p for p in snapshot()["packages"] if p["id"] != failing.id]
     # Lo que hace la task de control: pide los paquetes a reintentar y los procesa.
-    result = check_disbursement_packages(timezone.localdate(), is_last_run=False)
+    result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
 
     for package_id in result.to_retry:
         process_disbursement_package(package_id)
@@ -385,10 +381,10 @@ def test_infrastructure_failure_is_completed_by_the_automatic_retry(daily_mercha
     failing.refresh_from_db()
     assert failing.status == DisbursementPackage.Status.COMPLETED
     assert failing.attempts == 2
-    assert failing.error == ""
     padberg = disbursement_of(daily_merchant)
     assert padberg.status == COMPLETED
     assert padberg.error == ""
+    assert padberg.is_retryable is None
     assert amounts(padberg) == (Decimal("533.21"), Decimal("4.63"), Decimal("528.58"))
     assert not Disbursement.objects.exclude(status=COMPLETED).exists()
     # Los otros paquetes no se vuelven a procesar.

@@ -5,9 +5,11 @@ from datetime import date
 
 import pytest
 
-from disbursements.models import Disbursement, DisbursementPackage
-from disbursements.services.packages import create_disbursement_packages
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
+from disbursement_packages.models import DisbursementPackage
+from disbursement_packages.services.package_creation import create_disbursement_packages
+from disbursement_packages.tests.factories import DisbursementPackageFactory
+from disbursements.models import Disbursement
+from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
 from orders.tests.factories import OrderFactory
 

@@ -10,10 +10,12 @@ from unittest import mock
 import pytest
 from django.db import OperationalError
 
-from disbursements.models import Disbursement, DisbursementPackage
-from disbursements.services.package_processing import process_disbursement_package
+from disbursement_packages.models import DisbursementPackage
+from disbursement_packages.services.package_processing import process_disbursement_package
+from disbursement_packages.tests.factories import DisbursementPackageFactory
+from disbursements.models import Disbursement
 from disbursements.services.reprocessing import reprocess_disbursements
-from disbursements.tests.factories import DisbursementFactory, DisbursementPackageFactory
+from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
 from orders.tests.factories import OrderFactory
 
@@ -22,7 +24,7 @@ pytestmark = pytest.mark.django_db
 Status = DisbursementPackage.Status
 PAYMENT_DATE = date(2023, 2, 8)
 ORDERS_DATE = date(2023, 2, 7)
-SERVICE = "disbursements.services.package_processing"
+SERVICE = "disbursement_packages.services.package_processing"
 
 
 def disbursement_with_one_order(reference, amount, commission_fee):
@@ -72,11 +74,9 @@ def test_reprocesses_only_the_given_disbursements(failed_package):
     assert amounts(b) == (Decimal("10.50"), Decimal("0.11"), Decimal("10.39"))
     # c no se pidió: queda FAILED como estaba.
     assert disbursement_state(c.id) == c_before
-    # Al paquete le queda c FAILED. Esta corrida no tuvo errores: mantiene el is_retryable que tenía
-    # (False, por la falla de datos de c).
+    # Al paquete le queda c FAILED.
     failed_package.refresh_from_db()
     assert failed_package.status == Status.FAILED
-    assert failed_package.is_retryable is False
     assert failed_package.attempts == 2
 
 
@@ -187,11 +187,10 @@ def test_error_during_reprocess_sets_is_retryable_by_its_type(failed_package, er
 
     failed_package.refresh_from_db()
     assert failed_package.status == Status.FAILED
-    assert failed_package.is_retryable is retryable
-    assert str(error) in failed_package.error
     assert failed_package.attempts == 2
     b.refresh_from_db()
     assert b.status == Disbursement.Status.FAILED
+    assert b.is_retryable is retryable
     assert str(error) in b.error
     assert amounts(b) == (None, None, None)
 
@@ -205,10 +204,10 @@ def test_data_failure_during_reprocess_is_not_retryable(failed_package):
 
     failed_package.refresh_from_db()
     assert failed_package.status == Status.FAILED
-    assert failed_package.is_retryable is False
     assert failed_package.attempts == 2
     b.refresh_from_db()
     assert b.status == Disbursement.Status.FAILED
+    assert b.is_retryable is False
     assert "3" in b.error
     assert amounts(b) == (None, None, None)
 
