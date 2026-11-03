@@ -65,6 +65,8 @@ IMPORT_DIR = Path(os.environ.get("IMPORT_DIR", BASE_DIR / "import_data"))
 
 # Reglas de negocio configurables.
 PACKAGE_MAX_ORDERS = int(os.environ.get("PACKAGE_MAX_ORDERS", "5000"))
-PACKAGE_MAX_RETRIES = int(os.environ.get("PACKAGE_MAX_RETRIES", "1"))
+# Reintentos automáticos de un paquete: uno por cada check que no es el último.
+PACKAGE_MAX_RETRIES = int(os.environ.get("PACKAGE_MAX_RETRIES", "2"))
 PACKAGE_FAILURE_THRESHOLD_PERCENT = int(os.environ.get("PACKAGE_FAILURE_THRESHOLD_PERCENT", "80"))
+# Horas (UTC) del control de paquetes del día. El último solo alerta y deja 2 h antes de las 08:00.
 CHECK_PACKAGES_HOURS = [2, 4, 6]
