@@ -8,9 +8,10 @@ from decimal import Decimal
 
 import pytest
 
-from disbursements.models import Disbursement, MonthlyFee
+from disbursements.models import Disbursement
 from disbursements.services.reports import yearly_report
 from disbursements.tests.factories import DisbursementFactory
+from fees.models import MonthlyFee
 from merchants.tests.factories import MerchantFactory
 
 pytestmark = pytest.mark.django_db

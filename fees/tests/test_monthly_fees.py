@@ -5,9 +5,9 @@ from decimal import Decimal
 
 import pytest
 
-from disbursements.models import MonthlyFee
-from disbursements.services.monthly_fees import calculate_monthly_fees, calculate_monthly_fees_for_range
 from disbursements.tests.factories import DisbursementFactory
+from fees.models import MonthlyFee
+from fees.services.monthly_fees import calculate_monthly_fees, calculate_monthly_fees_for_range
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
 from orders.tests.factories import OrderFactory

@@ -3,16 +3,13 @@
 Las otras apps llaman a estos métodos en lugar de filtrar o actualizar el modelo directamente.
 """
 
-from decimal import Decimal
-
 from django.db import models
 from django.db.models import Count, Sum
 from django.utils import timezone
 
+from core.constants import ZERO_AMOUNT
 from disbursements.constants import DISBURSEMENT_UPDATE_BATCH_SIZE
 from disbursements.data_classes import DisbursementTotals
-
-ZERO = Decimal("0.00")
 
 
 class DisbursementQuerySet(models.QuerySet):
@@ -56,7 +53,7 @@ class DisbursementQuerySet(models.QuerySet):
             fees=Sum("orders__commission_fee"),
         ).values_list("id", "orders_found", "gross", "fees")
         return {
-            disbursement_id: DisbursementTotals(disbursement_id, orders_found, gross or ZERO, fees or ZERO)
+            disbursement_id: DisbursementTotals(disbursement_id, orders_found, gross or ZERO_AMOUNT, fees or ZERO_AMOUNT)
             for disbursement_id, orders_found, gross, fees in rows
         }
 

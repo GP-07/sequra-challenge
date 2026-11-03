@@ -22,10 +22,11 @@ from disbursement_packages.models import DisbursementPackage
 from disbursement_packages.services.package_checks import check_disbursement_packages
 from disbursement_packages.services.package_creation import create_disbursement_packages
 from disbursement_packages.services.package_processing import process_disbursement_package
-from disbursements.models import Disbursement, MonthlyFee
+from disbursements.models import Disbursement
 from disbursements.services.disbursement_creation import create_disbursements
-from disbursements.services.monthly_fees import calculate_monthly_fees
 from disbursements.tests.factories import DisbursementFactory
+from fees.models import MonthlyFee
+from fees.services.monthly_fees import calculate_monthly_fees
 from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
 from orders.models import Order

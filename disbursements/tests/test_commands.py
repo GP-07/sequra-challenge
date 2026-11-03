@@ -10,7 +10,7 @@ from django.core.management import CommandError
 from core.tests.helpers import put_in_import_dir, run_command
 from disbursement_packages.models import DisbursementPackage
 from disbursement_packages.tests.factories import DisbursementPackageFactory
-from disbursements.models import Disbursement, MonthlyFee
+from disbursements.models import Disbursement
 from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
 from orders.models import Order
@@ -56,17 +56,6 @@ def test_backfill_creates_packages_and_processes_them(loaded):
     # El comando termina al encolar los paquetes e informa qué armó.
     assert "Disbursements created: 2" in output
     assert "Packages enqueued: 1" in output
-
-
-def test_backfill_monthly_fees_for_range(loaded):
-    run_command("calculate_monthly_fees_for_range", "--from", "2023-02", "--to", "2023-02")
-
-    # padberg_group tiene minimum 0: no se le cobra.
-    assert MonthlyFee.objects.count() == 1
-    fee = MonthlyFee.objects.get(merchant__reference="deckow_gibson", month=date(2023, 2, 1))
-    assert fee.commissions_amount == Decimal("0.11")
-    assert fee.minimum_monthly_fee == Decimal("29.00")
-    assert fee.amount == Decimal("28.89")
 
 
 # --- retry disbursements ---

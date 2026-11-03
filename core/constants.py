@@ -8,3 +8,4 @@ CSV_DELIMITER = ";"
 
 # Los montos se redondean a centavos (ROUND_HALF_UP).
 CENTS = Decimal("0.01")
+ZERO_AMOUNT = Decimal("0.00")

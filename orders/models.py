@@ -1,6 +1,7 @@
 from django.db import models
 
 from core.constants import MONEY
+from orders.managers import OrderQuerySet
 
 
 class Order(models.Model):
@@ -13,6 +14,8 @@ class Order(models.Model):
     disbursement = models.ForeignKey(
         "disbursements.Disbursement", null=True, blank=True, on_delete=models.PROTECT, related_name="orders"
     )
+
+    objects = OrderQuerySet.as_manager()
 
     class Meta:
         indexes = [
