@@ -74,3 +74,15 @@ def check_disbursement_packages(run_date: date, *, is_last_run: bool) -> CheckRe
                 critical=True,
             )
     return result
+
+
+def unfinished_packages_for_range(date_from: date, date_to: date, *, exclude_ids=()) -> list[int]:
+    """Ids de los paquetes PENDING o FAILED de los disbursements con fecha de pago en el rango.
+
+    Lo usa el backfill para informar paquetes de una corrida anterior que no terminaron; no los re-encola.
+    """
+    package_ids = Disbursement.objects.package_ids_for_payment_dates(date_from, date_to) - set(exclude_ids)
+    unfinished = DisbursementPackage.objects.filter(
+        id__in=package_ids, status__in=[DisbursementPackage.Status.PENDING, DisbursementPackage.Status.FAILED]
+    )
+    return sorted(unfinished.values_list("id", flat=True))

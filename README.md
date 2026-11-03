@@ -41,6 +41,23 @@ Both are acceptable because the backfill is run manually, once, and it is idempo
 again skips the disbursements that already exist. The creation tests run with both strategies to
 make sure they do not drift apart.
 
+### If a day fails, the backfill stops
+
+`create_disbursements_for_range` stops at the first payment date whose creation fails, reports which
+day failed and why, and does not create any package. The days before it stay created, as PENDING
+disbursements without a package, so nothing of the range is paid yet.
+
+It does not skip the failing day and go on, on purpose. Going on would leave a partial result that
+looks complete: someone could read it right away without knowing a day is missing. Worse, the orders
+of the failed day would not wait for it: the next payment date would take them as delayed orders,
+so they would be paid on the wrong date and flagged as delayed when they were not, and the numbers
+per date would change silently. Stopping keeps the data trustworthy: either the range is complete,
+or it is clearly unfinished. Running the command again over the same range is safe, because
+existing disbursements are skipped.
+
+Packages of the range left PENDING or FAILED by a previous run are only reported, with their ids,
+to be retried with `retry_disbursement_package`; the command does not enqueue them again.
+
 Measured with the provided data (payment dates 2022-09-05 to 2023-11-08, 11,889 disbursements,
 1,309,023 orders, local PostgreSQL), creation only:
 

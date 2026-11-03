@@ -1,17 +1,21 @@
 """Comandos manuales de disbursements: backfill y reintento manual por id de disbursement."""
 
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from unittest import mock
 
 import pytest
 from django.conf import settings
 from django.core.management import CommandError
+from django.db import OperationalError
 
 from core.tests.helpers import put_in_import_dir, run_command
 from disbursement_packages.models import DisbursementPackage
 from disbursement_packages.tests.factories import DisbursementPackageFactory
 from disbursements.models import Disbursement
+from disbursements.services import disbursement_creation
 from disbursements.tests.factories import DisbursementFactory
+from merchants.models import Merchant
 from merchants.tests.factories import MerchantFactory
 from orders.models import Order
 from orders.tests.factories import OrderFactory
@@ -21,6 +25,7 @@ pytestmark = pytest.mark.django_db
 # CSVs de prueba, con el mismo formato que los del challenge.
 MERCHANTS_DATA_DIR = settings.BASE_DIR / "merchants" / "tests" / "data"
 ORDERS_DATA_DIR = settings.BASE_DIR / "orders" / "tests" / "data"
+COMMAND = "disbursements.management.commands.create_disbursements_for_range"
 
 
 @pytest.fixture
@@ -56,6 +61,92 @@ def test_backfill_creates_packages_and_processes_them(loaded):
     # El comando termina al encolar los paquetes e informa qué armó.
     assert "Disbursements created: 2" in output
     assert "Packages enqueued: 1" in output
+
+
+def test_backfill_run_twice_creates_and_enqueues_nothing_new(loaded):
+    run_command("create_disbursements_for_range", "--from", "2023-02-01", "--to", "2023-02-08")
+
+    output = run_command("create_disbursements_for_range", "--from", "2023-02-01", "--to", "2023-02-08")
+
+    assert Disbursement.objects.count() == 2
+    assert DisbursementPackage.objects.count() == 1
+    assert "Disbursements created: 0" in output
+    assert "Packages enqueued: 0" in output
+    assert "Packages from previous runs" not in output
+
+
+@pytest.mark.parametrize(
+    ("date_from", "date_to", "message"),
+    (
+        ("2023-02-08", "2023-02-01", "is after --to"),
+        ("2023-02-01", "2023-02-31", "Invalid date"),
+        ("01/02/2023", "2023-02-08", "Invalid date"),
+        # Hoy (fijado en el test) es 2023-02-08: el 9 todavía no cerró.
+        ("2023-02-01", "2023-02-09", "is after today"),
+    ),
+)
+def test_backfill_rejects_invalid_ranges(date_from, date_to, message):
+    with mock.patch(f"{COMMAND}.timezone.now", return_value=datetime(2023, 2, 8, 10, 0, tzinfo=timezone.utc)):
+        with pytest.raises(CommandError, match=message):
+            run_command("create_disbursements_for_range", "--from", date_from, "--to", date_to)
+
+    assert not Disbursement.objects.exists()
+
+
+def test_backfill_stops_at_the_day_that_fails_and_keeps_the_previous_days():
+    merchant = MerchantFactory(reference="padberg_group", disbursement_frequency=Merchant.Frequency.DAILY)
+    for day in (1, 2, 3):
+        OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, day))
+
+    # Se crea de verdad el 2/2 (DAILY y WEEKLY) y falla la tercera llamada: el 2/3 DAILY.
+    with mock.patch.object(
+        disbursement_creation,
+        "create_disbursements_in_bulk",
+        wraps=disbursement_creation.create_disbursements_in_bulk,
+        side_effect=[mock.DEFAULT, mock.DEFAULT, OperationalError("connection lost")],
+    ):
+        with pytest.raises(CommandError) as error:
+            run_command("create_disbursements_for_range", "--from", "2023-02-02", "--to", "2023-02-04")
+
+    assert "payment date 2023-02-03 failed" in str(error.value)
+    assert "connection lost" in str(error.value)
+    assert "Disbursements created before it: 1" in str(error.value)
+    # El 2/2 quedó creado y sin paquete: el comando no arma paquetes si falla la creación.
+    assert list(Disbursement.objects.values_list("payment_date", "package_id")) == [(date(2023, 2, 2), None)]
+    assert not DisbursementPackage.objects.exists()
+
+
+def test_backfill_reports_disbursements_that_require_attention(settings):
+    settings.PACKAGE_MAX_ORDERS = 1
+    merchant = MerchantFactory(reference="padberg_group", disbursement_frequency=Merchant.Frequency.DAILY)
+    OrderFactory.create_batch(2, merchant=merchant, order_creation_date=date(2023, 2, 1))
+
+    output = run_command("create_disbursements_for_range", "--from", "2023-02-02", "--to", "2023-02-02")
+
+    disbursement = Disbursement.objects.get(merchant=merchant, payment_date=date(2023, 2, 2))
+    assert disbursement.status == Disbursement.Status.REQUIRES_ATTENTION
+    assert "Packages enqueued: 0" in output
+    assert "Requires attention (too many orders for a package): 1" in output
+    assert "  padberg_group_for_20230201" in output
+
+
+def test_backfill_reports_unfinished_packages_of_previous_runs_without_enqueuing_them():
+    merchant = MerchantFactory(reference="padberg_group")
+    previous = DisbursementFactory(
+        merchant=merchant,
+        payment_date=date(2023, 2, 2),
+        orders=[OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 1))],
+        status=Disbursement.Status.FAILED,
+    )
+    package = DisbursementPackageFactory(disbursements=[previous], status=DisbursementPackage.Status.FAILED, attempts=1)
+
+    output = run_command("create_disbursements_for_range", "--from", "2023-02-02", "--to", "2023-02-03")
+
+    package.refresh_from_db()
+    assert package.status == DisbursementPackage.Status.FAILED
+    assert package.attempts == 1
+    assert "Packages from previous runs not completed (PENDING or FAILED): 1" in output
+    assert f"  {package.id}" in output
 
 
 # --- retry disbursements ---

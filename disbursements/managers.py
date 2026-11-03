@@ -123,5 +123,10 @@ class DisbursementQuerySet(models.QuerySet):
     def packaged_for_payment_date(self, payment_date):
         return self.filter(payment_date=payment_date, package__isnull=False)
 
+    def package_ids_for_payment_dates(self, date_from, date_to) -> set[int]:
+        """Una sola query: ids de los paquetes de los disbursements con fecha de pago en el rango."""
+        rows = self.filter(payment_date__range=(date_from, date_to), package__isnull=False).order_by()
+        return set(rows.values_list("package_id", flat=True).distinct())
+
     def failed(self):
         return self.filter(status=self.model.Status.FAILED)

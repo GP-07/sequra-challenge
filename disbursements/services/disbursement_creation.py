@@ -25,6 +25,7 @@ from datetime import date, timedelta
 from django.db import transaction
 
 from disbursements.data_classes import CreationResult
+from disbursements.exceptions import DayCreationFailed
 from disbursements.models import Disbursement
 from merchants.models import Merchant
 from orders.models import Order
@@ -138,12 +139,19 @@ def create_disbursements_in_bulk(payment_date: date, frequency: str) -> Creation
 
 
 def create_disbursements_for_range(date_from: date, date_to: date) -> CreationResult:
-    """Backfill del histórico: para cada fecha de pago del rango (inclusive), DAILY y WEEKLY, en bloque."""
+    """Backfill del histórico: para cada fecha de pago del rango (inclusive), DAILY y WEEKLY, en bloque.
+
+    Si falla un día, corta: lo de los días anteriores ya quedó guardado y se lanza DayCreationFailed
+    con la fecha. Volver a correrlo es seguro, porque saltea lo que ya existe.
+    """
     result = CreationResult()
     payment_date = date_from
     while payment_date <= date_to:
         for frequency in (Merchant.Frequency.DAILY, Merchant.Frequency.WEEKLY):
-            day = create_disbursements_in_bulk(payment_date, frequency)
+            try:
+                day = create_disbursements_in_bulk(payment_date, frequency)
+            except Exception as error:
+                raise DayCreationFailed(payment_date, frequency, len(result.created)) from error
             result.created.extend(day.created)
             result.skipped_existing += day.skipped_existing
         payment_date += timedelta(days=1)
