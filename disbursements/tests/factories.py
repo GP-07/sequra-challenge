@@ -28,5 +28,3 @@ class DisbursementFactory(DjangoModelFactory):
         if not create or not extracted:
             return
         Order.objects.filter(id__in=[o.id for o in extracted]).update(disbursement=self)
-        self.order_count = len(extracted)
-        self.save(update_fields=["order_count"])

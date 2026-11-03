@@ -16,7 +16,7 @@ class OrderFactory(DjangoModelFactory):
     class Meta:
         model = Order
 
-    id = factory.Sequence(lambda n: f"order{n:07d}")
+    external_id = factory.Sequence(lambda n: f"order{n:07d}")
     merchant = factory.SubFactory(MerchantFactory)
     amount = Decimal("100.00")
     commission_fee = Decimal("0.95")

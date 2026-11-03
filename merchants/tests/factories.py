@@ -14,7 +14,7 @@ class MerchantFactory(DjangoModelFactory):
     class Meta:
         model = Merchant
 
-    id = factory.LazyFunction(uuid.uuid4)
+    external_id = factory.LazyFunction(uuid.uuid4)
     reference = factory.Sequence(lambda n: f"merchant_{n}")
     email = factory.LazyAttribute(lambda merchant: f"info@{merchant.reference}.com")
     live_on = date(2023, 1, 1)

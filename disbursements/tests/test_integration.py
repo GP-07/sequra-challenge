@@ -70,7 +70,7 @@ def snapshot():
     return {
         "disbursements": list(
             Disbursement.objects.order_by("id").values(
-                "id", "reference", "status", "package_id", "order_count", "has_processed_delayed_orders",
+                "id", "reference", "status", "package_id", "has_processed_delayed_orders",
                 "error", "is_retryable", "gross_amount", "commission_fee_amount", "disbursed_amount", "updated_at",
             )
         ),
@@ -123,19 +123,19 @@ def test_disbursements_of_daily_and_weekly_merchants_are_created_and_processed(
     padberg = disbursement_of(daily_merchant)
     assert padberg.reference == "padberg_group_for_20230207"
     assert padberg.status == COMPLETED
-    assert padberg.order_count == 2
+    assert padberg.orders.count() == 2
     assert padberg.has_processed_delayed_orders is False
     assert amounts(padberg) == (Decimal("533.21"), Decimal("4.63"), Decimal("528.58"))
     rempel = disbursement_of(other_daily_merchant)
     assert rempel.reference == "rempel_ltd_for_20230207"
     assert rempel.status == COMPLETED
-    assert rempel.order_count == 1
+    assert rempel.orders.count() == 1
     assert rempel.has_processed_delayed_orders is False
     assert amounts(rempel) == (Decimal("10.50"), Decimal("0.11"), Decimal("10.39"))
     deckow = disbursement_of(weekly_merchant)
     assert deckow.reference == "deckow_gibson_from_20230201_to_20230207"
     assert deckow.status == COMPLETED
-    assert deckow.order_count == 2
+    assert deckow.orders.count() == 2
     assert deckow.has_processed_delayed_orders is False
     assert amounts(deckow) == (Decimal("250.00"), Decimal("2.38"), Decimal("247.62"))
     assert not Order.objects.filter(disbursement__isnull=True).exists()
@@ -166,11 +166,11 @@ def test_only_merchants_with_orders_get_a_disbursement(daily_merchant, weekly_me
     assert references == {"padberg_group", "deckow_gibson"}
     padberg = disbursement_of(daily_merchant)
     assert padberg.status == COMPLETED
-    assert padberg.order_count == 1
+    assert padberg.orders.count() == 1
     assert amounts(padberg) == (Decimal("100.00"), Decimal("0.95"), Decimal("99.05"))
     deckow = disbursement_of(weekly_merchant)
     assert deckow.status == COMPLETED
-    assert deckow.order_count == 1
+    assert deckow.orders.count() == 1
     assert amounts(deckow) == (Decimal("200.00"), Decimal("1.90"), Decimal("198.10"))
     assert DisbursementPackage.objects.count() == 1
     package = padberg.package
@@ -199,14 +199,14 @@ def test_delayed_orders_are_paid_in_the_next_payment_and_flagged(
     assert delayed_daily.id in set(padberg.orders.values_list("id", flat=True))
     assert padberg.reference == "padberg_group_for_20230207"
     assert padberg.status == COMPLETED
-    assert padberg.order_count == 3
+    assert padberg.orders.count() == 3
     assert padberg.has_processed_delayed_orders is True
     assert amounts(padberg) == (Decimal("553.21"), Decimal("4.83"), Decimal("548.38"))
     deckow = disbursement_of(weekly_merchant)
     assert delayed_weekly.id in set(deckow.orders.values_list("id", flat=True))
     assert deckow.reference == "deckow_gibson_from_20230201_to_20230207"
     assert deckow.status == COMPLETED
-    assert deckow.order_count == 3
+    assert deckow.orders.count() == 3
     assert deckow.has_processed_delayed_orders is True
     assert amounts(deckow) == (Decimal("280.00"), Decimal("2.68"), Decimal("277.32"))
     # rempel_ltd no tiene orders atrasadas: no se marca.
@@ -248,8 +248,8 @@ def test_reprocessing_what_is_already_completed_does_not_duplicate_or_change_any
 @pytest.fixture
 def package_with_a_data_failure(other_daily_merchant, orders_for_all_merchants):
     (package,) = create_payment_day(PAYMENT_DATE)
-    # Dato inconsistente: rempel_ltd dice tener 3 orders pero tiene 1.
-    Disbursement.objects.filter(merchant=other_daily_merchant).update(order_count=3)
+    # Dato inconsistente: la comisión de la order de rempel_ltd supera su monto.
+    Order.objects.filter(merchant=other_daily_merchant).update(commission_fee="20.00")
     process_disbursement_package(package.id)
     return package
 
@@ -280,7 +280,7 @@ def test_data_failure_leaves_the_valid_disbursements_completed_and_is_not_retrie
     rempel = disbursement_of(other_daily_merchant)
     assert rempel.status == FAILED
     assert rempel.is_retryable is False
-    assert "3" in rempel.error
+    assert "greater than the gross amount" in rempel.error
     assert amounts(rempel) == (None, None, None)
     # Las orders siguen asignadas a su disbursement, aunque haya fallado.
     assert not Order.objects.filter(disbursement__isnull=True).exists()
@@ -296,7 +296,7 @@ def test_data_failure_is_fixed_by_a_user_and_the_manual_retry_completes_the_pack
     package = package_with_a_data_failure
     completed_before = [d for d in snapshot()["disbursements"] if d["status"] == COMPLETED]
     # Un usuario corrige el dato y reprocesa el paquete a mano.
-    Disbursement.objects.filter(merchant=other_daily_merchant).update(order_count=1)
+    Order.objects.filter(merchant=other_daily_merchant).update(commission_fee="0.11")
 
     call_command("retry_disbursement_package", str(package.id))
 
@@ -311,6 +311,47 @@ def test_data_failure_is_fixed_by_a_user_and_the_manual_retry_completes_the_pack
     # Los que ya estaban COMPLETED no se vuelven a tocar.
     completed_after = [d for d in snapshot()["disbursements"] if d["id"] in {c["id"] for c in completed_before}]
     assert completed_after == completed_before
+
+
+def test_retry_processes_the_same_orders_and_a_late_order_goes_to_the_next_disbursement(
+    other_daily_merchant, package_with_a_data_failure
+):
+    """Caso 5 ter: lo mismo que el caso 5 bis, pero antes del reintento llega tarde una order del mismo
+    día y ya se creó y empaquetó el disbursement del día siguiente, que la incluye.
+
+    Un disbursement no cambia una vez creado: el reintento procesa las mismas orders del disbursement
+    que falló y no toca el disbursement ni el paquete del día siguiente.
+    """
+    package = package_with_a_data_failure
+    late_order = OrderFactory(merchant=other_daily_merchant, order_creation_date=YESTERDAY, amount="99.00", commission_fee="0.94")
+    next_payment_date = date(2023, 2, 9)
+    (next_package,) = create_payment_day(next_payment_date)
+    next_disbursement = Disbursement.objects.get(merchant=other_daily_merchant, payment_date=next_payment_date)
+    next_disbursement_before = [d for d in snapshot()["disbursements"] if d["id"] == next_disbursement.id]
+    next_package_before = [p for p in snapshot()["packages"] if p["id"] == next_package.id]
+    # Un usuario corrige el dato de la order del disbursement que falló y reprocesa a mano.
+    Order.objects.filter(merchant=other_daily_merchant, order_creation_date=YESTERDAY).exclude(id=late_order.id).update(
+        commission_fee="0.11"
+    )
+
+    call_command("retry_disbursement_package", str(package.id))
+
+    rempel = disbursement_of(other_daily_merchant)
+    assert rempel.status == COMPLETED
+    assert amounts(rempel) == (Decimal("10.50"), Decimal("0.11"), Decimal("10.39"))
+    assert late_order.id not in set(rempel.orders.values_list("id", flat=True))
+    package.refresh_from_db()
+    assert package.status == DisbursementPackage.Status.COMPLETED
+    assert set(package.disbursements.values_list("id", flat=True)) == set(
+        Disbursement.objects.filter(payment_date=PAYMENT_DATE).values_list("id", flat=True)
+    )
+    # La order tardía quedó en el disbursement del día siguiente, que el reintento no tocó.
+    late_order.refresh_from_db()
+    assert late_order.disbursement_id == next_disbursement.id
+    assert next_disbursement.package_id == next_package.id
+    assert next_disbursement.has_processed_delayed_orders is True
+    assert [d for d in snapshot()["disbursements"] if d["id"] == next_disbursement.id] == next_disbursement_before
+    assert [p for p in snapshot()["packages"] if p["id"] == next_package.id] == next_package_before
 
 
 # --- caso 6 y 6 bis: falla de infraestructura, con reintento automático ---

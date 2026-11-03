@@ -24,9 +24,16 @@ class DisbursementQuerySet(models.QuerySet):
         return (
             self.select_for_update(of=("self",))
             .filter(status=self.model.Status.PENDING, package__isnull=True, payment_date__range=(date_from, date_to))
-            .order_by("payment_date", "merchant__reference")
-            .only("id", "reference", "order_count")
+            .order_by("payment_date", "merchant_id")
+            .only("id", "reference")
         )
+
+    def order_counts(self, disbursement_ids) -> dict[int, int]:
+        """Una sola query: {disbursement_id: cantidad de orders}. Va aparte de to_package porque
+        Postgres no permite FOR UPDATE con GROUP BY.
+        """
+        rows = self.filter(id__in=disbursement_ids).order_by().annotate(orders_found=Count("orders"))
+        return dict(rows.values_list("id", "orders_found"))
 
     def assign_to_package(self, disbursement_ids, package):
         return self.filter(id__in=disbursement_ids).update(package=package, updated_at=timezone.now())
@@ -46,15 +53,14 @@ class DisbursementQuerySet(models.QuerySet):
         return queryset
 
     def totals(self) -> dict[int, DisbursementTotals]:
-        """Una sola query: cantidad de orders, bruto y comisiones de cada disbursement del queryset."""
+        """Una sola query: bruto y comisiones de cada disbursement del queryset."""
         rows = self.order_by().annotate(
-            orders_found=Count("orders"),
             gross=Sum("orders__amount"),
             fees=Sum("orders__commission_fee"),
-        ).values_list("id", "orders_found", "gross", "fees")
+        ).values_list("id", "gross", "fees")
         return {
-            disbursement_id: DisbursementTotals(disbursement_id, orders_found, gross or ZERO_AMOUNT, fees or ZERO_AMOUNT)
-            for disbursement_id, orders_found, gross, fees in rows
+            disbursement_id: DisbursementTotals(disbursement_id, gross or ZERO_AMOUNT, fees or ZERO_AMOUNT)
+            for disbursement_id, gross, fees in rows
         }
 
     def mark_as_completed(self, totals: list[DisbursementTotals]) -> None:

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.django_db
 
 def test_retry_reprocesses_a_non_retryable_package_after_fixing_the_data():
     # Así queda un paquete tras una falla de datos: FAILED no retryable, porque reintentar
-    # automáticamente no sirve. Alguien ya corrigió el dato (order_count vuelve a coincidir) y lo
+    # automáticamente no sirve. Alguien ya corrigió el dato (la comisión ya no supera al bruto) y lo
     # reprocesa a mano: el retry manual no mira is_retryable.
     merchant = MerchantFactory(reference="padberg_group")
     order = OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, 7))
@@ -27,7 +27,7 @@ def test_retry_reprocesses_a_non_retryable_package_after_fixing_the_data():
         payment_date=date(2023, 2, 8),
         orders=[order],
         status=Disbursement.Status.FAILED,
-        error="Expected 2 orders but found 1.",
+        error="Commission fees 20.00 are greater than the gross amount 10.50.",
         is_retryable=False,
     )
     package = DisbursementPackageFactory(disbursements=[disbursement], status=DisbursementPackage.Status.FAILED, attempts=1)

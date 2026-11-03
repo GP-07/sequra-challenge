@@ -9,7 +9,8 @@ class Merchant(models.Model):
         DAILY = "DAILY"
         WEEKLY = "WEEKLY"
 
-    id = models.UUIDField(primary_key=True)
+    # id del CSV: se usa para buscar. La PK es el id autoincremental de la DB, que es el que se usa para ordenar y en las FKs.
+    external_id = models.UUIDField(unique=True)
     reference = models.CharField(max_length=255, unique=True)
     email = models.EmailField()
     live_on = models.DateField()

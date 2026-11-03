@@ -134,30 +134,6 @@ def test_unexpected_error_rolls_back_and_fails_package_and_disbursements(package
         assert disbursement.gross_amount is None
 
 
-def test_invalid_disbursement_does_not_undo_the_others(package):
-    # b dice tener 3 orders pero tiene 1 asignada.
-    Disbursement.objects.filter(merchant__reference="b_merchant").update(order_count=3)
-
-    process_disbursement_package(package.id)
-
-    package.refresh_from_db()
-    assert package.status == Status.FAILED
-    a = Disbursement.objects.get(merchant__reference="a_merchant")
-    assert a.status == Disbursement.Status.COMPLETED
-    assert (a.gross_amount, a.commission_fee_amount, a.disbursed_amount) == (
-        Decimal("533.21"),
-        Decimal("4.63"),
-        Decimal("528.58"),
-    )
-    assert a.error == ""
-    b = Disbursement.objects.get(merchant__reference="b_merchant")
-    assert b.status == Disbursement.Status.FAILED
-    assert "3" in b.error
-    # Reintentar no sirve hasta que alguien corrija los datos.
-    assert b.is_retryable is False
-    assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (None, None, None)
-
-
 @pytest.mark.parametrize(
     "amount, commission_fee, reason",
     [
@@ -174,9 +150,16 @@ def test_disbursement_with_invalid_amounts_fails_and_does_not_undo_the_others(pa
 
     a = Disbursement.objects.get(merchant__reference="a_merchant")
     assert a.status == Disbursement.Status.COMPLETED
+    assert (a.gross_amount, a.commission_fee_amount, a.disbursed_amount) == (
+        Decimal("533.21"),
+        Decimal("4.63"),
+        Decimal("528.58"),
+    )
+    assert a.error == ""
     b = Disbursement.objects.get(merchant__reference="b_merchant")
     assert b.status == Disbursement.Status.FAILED
     assert reason in b.error
+    # Reintentar no sirve hasta que alguien corrija los datos.
     assert b.is_retryable is False
     assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (None, None, None)
     package.refresh_from_db()
@@ -184,11 +167,12 @@ def test_disbursement_with_invalid_amounts_fails_and_does_not_undo_the_others(pa
 
 
 def test_reprocessing_only_touches_what_is_not_completed(package):
-    Disbursement.objects.filter(merchant__reference="b_merchant").update(order_count=3)
+    # Comisión mayor al bruto: b falla por datos.
+    Order.objects.filter(merchant__reference="b_merchant").update(commission_fee="20.00")
     process_disbursement_package(package.id)
     a_before = disbursements_snapshot(package)[0]
     # Alguien corrige el dato y manda a reprocesar.
-    Disbursement.objects.filter(merchant__reference="b_merchant").update(order_count=1)
+    Order.objects.filter(merchant__reference="b_merchant").update(commission_fee="0.11")
 
     processed = process_disbursement_package(package.id)
 

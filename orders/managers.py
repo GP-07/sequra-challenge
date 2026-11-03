@@ -1,7 +1,7 @@
 """Consultas sobre orders que usan otras apps, con nombres de negocio."""
 
 from django.db import models
-from django.db.models import Min, Sum
+from django.db.models import Case, Min, Sum, Value, When
 
 
 class OrderQuerySet(models.QuerySet):
@@ -24,6 +24,22 @@ class OrderQuerySet(models.QuerySet):
         return self.filter(
             merchant_id=merchant_id, disbursement__isnull=True, order_creation_date__lte=up_to
         ).update(disbursement_id=disbursement_id)
+
+    def assign_to_disbursements(self, disbursement_by_merchant: dict, up_to) -> int:
+        """assign_to_disbursement para varios merchants a la vez, con un solo UPDATE. Devuelve cuántas asignó.
+
+        disbursement_by_merchant es {merchant_id: disbursement_id}.
+        """
+        if not disbursement_by_merchant:
+            return 0
+        return self.filter(
+            merchant_id__in=disbursement_by_merchant, disbursement__isnull=True, order_creation_date__lte=up_to
+        ).update(
+            disbursement_id=Case(
+                *[When(merchant_id=merchant_id, then=Value(disbursement_id))
+                  for merchant_id, disbursement_id in disbursement_by_merchant.items()]
+            )
+        )
 
     def commissions_by_merchant(self, date_from, date_to) -> dict:
         """Una sola query: suma de commission_fee por merchant de las orders creadas en el rango (inclusive).

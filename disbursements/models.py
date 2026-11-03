@@ -19,7 +19,6 @@ class Disbursement(models.Model):
     package = models.ForeignKey(
         "disbursement_packages.DisbursementPackage", null=True, blank=True, on_delete=models.PROTECT, related_name="disbursements"
     )
-    order_count = models.PositiveIntegerField(default=0)
     has_processed_delayed_orders = models.BooleanField(default=False)
     # Motivo por el que falló al procesar su paquete.
     error = models.TextField(blank=True)

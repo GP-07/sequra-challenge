@@ -12,30 +12,30 @@ from merchants.models import Merchant
 
 
 def import_merchants(path: Path) -> ImportResult:
-    """Carga los merchants nuevos del CSV. Los que ya existen (por id) no se tocan.
+    """Carga los merchants nuevos del CSV. Los que ya existen (por el id del CSV, external_id) no se tocan.
 
     Las filas inválidas se saltean y se informan con su número de línea; no frenan la carga del resto.
     """
     result = ImportResult()
-    parsed = {}  # id → (número de línea, merchant)
+    parsed = {}  # external_id → (número de línea, merchant)
     references = set()
     for line_number, row in read_rows(path, MERCHANT_CSV_COLUMNS):
         try:
             merchant = parse_merchant(row)
-            if merchant.id in parsed or merchant.reference in references:
+            if merchant.external_id in parsed or merchant.reference in references:
                 raise InvalidRow("id or reference repeated in the file")
         except InvalidRow as error:
             result.invalid.append((line_number, str(error)))
             continue
-        parsed[merchant.id] = (line_number, merchant)
+        parsed[merchant.external_id] = (line_number, merchant)
         references.add(merchant.reference)
 
     # Dos queries para todo el archivo, no una por fila.
-    existing_ids = set(Merchant.objects.filter(id__in=parsed).values_list("id", flat=True))
+    existing_ids = set(Merchant.objects.filter(external_id__in=parsed).values_list("external_id", flat=True))
     used_references = set(Merchant.objects.filter(reference__in=references).values_list("reference", flat=True))
     new_merchants = []
     for line_number, merchant in parsed.values():
-        if merchant.id in existing_ids:
+        if merchant.external_id in existing_ids:
             result.skipped_existing += 1
         elif merchant.reference in used_references:
             result.invalid.append((line_number, f"reference '{merchant.reference}' already used by another merchant"))
@@ -50,7 +50,7 @@ def import_merchants(path: Path) -> ImportResult:
 
 def parse_merchant(row: dict) -> Merchant:
     return Merchant(
-        id=parse_uuid(row["id"]),
+        external_id=parse_uuid(row["id"]),
         reference=parse_required(row["reference"], "reference"),
         email=parse_email(row["email"]),
         live_on=parse_date(row["live_on"], "live_on"),

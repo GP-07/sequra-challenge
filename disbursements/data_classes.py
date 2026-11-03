@@ -23,6 +23,5 @@ class ReprocessResult:
 @dataclass(frozen=True)
 class DisbursementTotals:
     disbursement_id: int
-    order_count: int
     gross_amount: Decimal
     commission_fee_amount: Decimal

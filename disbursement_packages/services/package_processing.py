@@ -43,24 +43,19 @@ def mark_package_as_processing(package_id: int) -> bool:
 
 
 def aggregate_package_totals(package_id: int, disbursement_ids: list[int] | None = None) -> dict[int, DisbursementTotals]:
-    """Una sola query: cantidad de orders, bruto y comisiones de cada disbursement no COMPLETED del paquete.
+    """Una sola query: bruto y comisiones de cada disbursement no COMPLETED del paquete.
 
     Con disbursement_ids, solo de esos.
     """
     return Disbursement.objects.unfinished_in_package(package_id, disbursement_ids).totals()
 
 
-def validate_totals(disbursement, totals: DisbursementTotals | None) -> str | None:
+def validate_totals(totals: DisbursementTotals) -> str | None:
     """None si los totales son válidos; si no, el motivo.
 
-    - La cantidad de orders encontradas coincide con la del disbursement.
-    - Ni el bruto ni las comisiones son negativos, y las comisiones no superan al bruto (no se paga un
-      monto negativo). Las orders ya se validan al ingresar; esto protege ante un dato corregido a mano.
+    Ni el bruto ni las comisiones son negativos, y las comisiones no superan al bruto (no se paga un
+    monto negativo). Las orders ya se validan al ingresar; esto protege ante un dato corregido a mano.
     """
-    if totals is None:
-        return f"Expected {disbursement.order_count} orders but found 0."
-    if totals.order_count != disbursement.order_count:
-        return f"Expected {disbursement.order_count} orders but found {totals.order_count}."
     if totals.gross_amount < 0 or totals.commission_fee_amount < 0:
         return f"Negative amounts: gross {totals.gross_amount}, commission fees {totals.commission_fee_amount}."
     if totals.commission_fee_amount > totals.gross_amount:
@@ -86,15 +81,13 @@ def process_disbursement_package(package_id: int, disbursement_ids: list[int] | 
         return False
     try:
         with transaction.atomic():
-            totals = aggregate_package_totals(package_id, disbursement_ids)
-            disbursements = Disbursement.objects.unfinished_in_package(package_id, disbursement_ids).only("id", "order_count")
             completed, failed = [], []
-            for disbursement in disbursements:
-                error = validate_totals(disbursement, totals.get(disbursement.id))
+            for totals in aggregate_package_totals(package_id, disbursement_ids).values():
+                error = validate_totals(totals)
                 if error:
-                    failed.append((disbursement.id, error))
+                    failed.append((totals.disbursement_id, error))
                 else:
-                    completed.append(totals[disbursement.id])
+                    completed.append(totals)
             save_disbursement_results(completed, failed)
             finish_package(package_id)
     except Exception as error:

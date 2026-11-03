@@ -38,8 +38,8 @@ def test_load_orders_loads_orders_with_their_commission(merchants, orders_csv):
     run_command("load_orders", "orders.csv")
 
     assert Order.objects.count() == 3
-    assert Order.objects.get(id="e653f3e14bc4").commission_fee == Decimal("0.97")
-    assert Order.objects.get(id="0f2f0a1c5b1a").commission_fee == Decimal("0.11")
+    assert Order.objects.get(external_id="e653f3e14bc4").commission_fee == Decimal("0.97")
+    assert Order.objects.get(external_id="0f2f0a1c5b1a").commission_fee == Decimal("0.11")
     assert not Order.objects.filter(disbursement__isnull=False).exists()
 
 

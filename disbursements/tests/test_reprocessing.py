@@ -17,6 +17,7 @@ from disbursements.models import Disbursement
 from disbursements.services.reprocessing import reprocess_disbursements
 from disbursements.tests.factories import DisbursementFactory
 from merchants.tests.factories import MerchantFactory
+from orders.models import Order
 from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
@@ -45,15 +46,16 @@ def amounts(disbursement):
 
 @pytest.fixture
 def failed_package():
-    """Paquete procesado con a COMPLETED y b y c FAILED por un dato inconsistente, ya corregido."""
+    """Paquete procesado con a COMPLETED y b y c FAILED por comisiones mayores al bruto, ya corregidas."""
     a = disbursement_with_one_order("a_merchant", "100.00", "0.95")
     b = disbursement_with_one_order("b_merchant", "10.50", "0.11")
     c = disbursement_with_one_order("c_merchant", "433.21", "3.68")
     package = DisbursementPackageFactory(disbursements=[a, b, c])
-    Disbursement.objects.filter(id__in=[b.id, c.id]).update(order_count=3)
+    Order.objects.filter(disbursement_id__in=[b.id, c.id]).update(commission_fee="999.00")
     process_disbursement_package(package.id)
     # Alguien corrige los datos de b y c.
-    Disbursement.objects.filter(id__in=[b.id, c.id]).update(order_count=1)
+    Order.objects.filter(disbursement_id=b.id).update(commission_fee="0.11")
+    Order.objects.filter(disbursement_id=c.id).update(commission_fee="3.68")
     return package
 
 
@@ -147,9 +149,9 @@ def test_disbursements_of_a_package_in_progress_are_skipped_and_reported(failed_
 def test_disbursements_of_different_packages_are_reprocessed_in_their_own_package(failed_package):
     other = disbursement_with_one_order("d_merchant", "50.00", "0.48")
     other_package = DisbursementPackageFactory(disbursements=[other])
-    Disbursement.objects.filter(id=other.id).update(order_count=2)
+    Order.objects.filter(disbursement_id=other.id).update(commission_fee="999.00")
     process_disbursement_package(other_package.id)
-    Disbursement.objects.filter(id=other.id).update(order_count=1)
+    Order.objects.filter(disbursement_id=other.id).update(commission_fee="0.48")
     b = Disbursement.objects.get(merchant__reference="b_merchant")
 
     result = reprocess_disbursements([b.id, other.id])
@@ -198,7 +200,7 @@ def test_error_during_reprocess_sets_is_retryable_by_its_type(failed_package, er
 def test_data_failure_during_reprocess_is_not_retryable(failed_package):
     # Se reprocesa b sin que nadie haya corregido el dato.
     b = Disbursement.objects.get(merchant__reference="b_merchant")
-    Disbursement.objects.filter(id=b.id).update(order_count=3)
+    Order.objects.filter(disbursement_id=b.id).update(commission_fee="999.00")
 
     reprocess_disbursements([b.id])
 
@@ -208,7 +210,7 @@ def test_data_failure_during_reprocess_is_not_retryable(failed_package):
     b.refresh_from_db()
     assert b.status == Disbursement.Status.FAILED
     assert b.is_retryable is False
-    assert "3" in b.error
+    assert "greater than the gross amount" in b.error
     assert amounts(b) == (None, None, None)
 
 

@@ -12,7 +12,7 @@ from orders.services.commissions import calculate_commission_fee
 
 
 def import_orders(path: Path, batch_size: int = ORDER_IMPORT_BATCH_SIZE) -> ImportResult:
-    """Carga las orders nuevas del CSV, con su commission_fee. Las que ya existen (por id) no se tocan.
+    """Carga las orders nuevas del CSV, con su commission_fee. Las que ya existen (por el id del CSV, external_id) no se tocan.
 
     Procesa por lotes para no tener el archivo entero en memoria: por lote, una query para ver qué
     ids ya existen y un bulk_create con los nuevos. Cada lote se guarda por separado; si la carga se
@@ -28,12 +28,12 @@ def import_orders(path: Path, batch_size: int = ORDER_IMPORT_BATCH_SIZE) -> Impo
     for line_number, row in read_rows(path, ORDER_CSV_COLUMNS):
         try:
             order = parse_order(row, merchant_ids)
-            if order.id in batch:
-                raise InvalidRow(f"id '{order.id}' repeated in the file")
+            if order.external_id in batch:
+                raise InvalidRow(f"id '{order.external_id}' repeated in the file")
         except InvalidRow as error:
             result.invalid.append((line_number, str(error)))
             continue
-        batch[order.id] = order
+        batch[order.external_id] = order
         if len(batch) >= batch_size:
             save_batch(batch, result)
             batch = {}
@@ -44,7 +44,7 @@ def import_orders(path: Path, batch_size: int = ORDER_IMPORT_BATCH_SIZE) -> Impo
 def save_batch(batch: dict, result: ImportResult) -> None:
     if not batch:
         return
-    existing_ids = set(Order.objects.filter(id__in=batch).values_list("id", flat=True))
+    existing_ids = set(Order.objects.filter(external_id__in=batch).values_list("external_id", flat=True))
     new_orders = [order for order_id, order in batch.items() if order_id not in existing_ids]
     Order.objects.bulk_create(new_orders)
     result.created += len(new_orders)
@@ -57,7 +57,7 @@ def parse_order(row: dict, merchant_ids: dict) -> Order:
         raise InvalidRow(f"unknown merchant '{reference}'")
     amount = parse_amount(row["amount"])
     return Order(
-        id=parse_order_id(row["id"]),
+        external_id=parse_order_id(row["id"]),
         merchant_id=merchant_ids[reference],
         amount=amount,
         commission_fee=calculate_commission_fee(amount),
@@ -67,7 +67,7 @@ def parse_order(row: dict, merchant_ids: dict) -> Order:
 
 def parse_order_id(value):
     value = parse_required(value, "id")
-    if len(value) > Order._meta.get_field("id").max_length:
+    if len(value) > Order._meta.get_field("external_id").max_length:
         raise InvalidRow(f"invalid id '{value}'")
     return value
 

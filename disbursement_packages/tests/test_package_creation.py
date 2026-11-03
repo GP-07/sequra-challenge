@@ -19,15 +19,14 @@ PAYMENT_DATE = date(2023, 2, 8)
 ORDERS_DATE = date(2023, 2, 7)
 
 
-def disbursement_with(reference, order_count, payment_date=PAYMENT_DATE, **fields):
+def disbursement_with(reference, number_of_orders, payment_date=PAYMENT_DATE, **fields):
     merchant = MerchantFactory(reference=reference)
-    orders = OrderFactory.create_batch(order_count, merchant=merchant, order_creation_date=ORDERS_DATE)
+    orders = OrderFactory.create_batch(number_of_orders, merchant=merchant, order_creation_date=ORDERS_DATE)
     return DisbursementFactory(merchant=merchant, payment_date=payment_date, orders=orders, **fields)
 
 
 def test_packs_disbursements_in_a_deterministic_order_without_splitting():
-    # Orden determinístico: fecha de pago y reference del merchant.
-    # PENDIENTE: revisar si la reference sirve como criterio; si cambia, cambian los paquetes.
+    # Orden determinístico: fecha de pago e id del merchant (el orden en que se crearon), no su reference.
     c = disbursement_with("c_merchant", 2)
     a = disbursement_with("a_merchant", 2)
     b = disbursement_with("b_merchant", 1)
@@ -35,10 +34,10 @@ def test_packs_disbursements_in_a_deterministic_order_without_splitting():
     result = create_disbursement_packages(PAYMENT_DATE, max_orders=3)
 
     first, second = result.packages
-    assert set(first.disbursements.values_list("id", flat=True)) == {a.id, b.id}
-    assert first.order_count == 3
-    assert set(second.disbursements.values_list("id", flat=True)) == {c.id}
-    assert second.order_count == 2
+    assert set(first.disbursements.values_list("id", flat=True)) == {c.id}
+    assert first.order_count == 2
+    assert set(second.disbursements.values_list("id", flat=True)) == {a.id, b.id}
+    assert second.order_count == 3
     assert all(p.status == DisbursementPackage.Status.PENDING for p in result.packages)
 
 
