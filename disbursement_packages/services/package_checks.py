@@ -6,8 +6,7 @@ retryable y entran en el mismo control, así se reintentan en esta corrida, o al
 Después mira los disbursements FAILED con esa fecha de pago, agrupados por paquete:
 - FAILED no retryable: alerta ERROR, no se reintenta (hay que corregir datos o código).
 - FAILED retryable en el último horario o sin reintentos disponibles: alerta CRITICAL, no se reintenta.
-- FAILED retryable: se reintenta su paquete, salvo que el % de disbursements FAILED del día supere
-  el umbral; en ese caso alerta CRITICAL y no se re-encola nada (algo más grande está fallando).
+- FAILED retryable: se reintenta su paquete.
 
 Los paquetes PENDING y los PROCESSING que un worker está procesando (o desde hace menos de
 PACKAGE_STUCK_AFTER_MINUTES) no se tocan.
@@ -60,15 +59,6 @@ def check_disbursement_packages(run_date: date, *, is_last_run: bool) -> CheckRe
                 f"Package {package_id}: disbursements still failed on the last check: {', '.join(sorted(references))}.",
                 critical=True,
             )
-        return result
-
-    failed_percent = len(failures) * 100 / of_the_day.count()
-    if failed_percent > settings.PACKAGE_FAILURE_THRESHOLD_PERCENT:
-        alert(
-            f"{failed_percent:.0f}% of the disbursements of {run_date} failed "
-            f"(threshold {settings.PACKAGE_FAILURE_THRESHOLD_PERCENT}%). Nothing is retried.",
-            critical=True,
-        )
         return result
 
     # attempts cuenta ejecuciones: 1 original + PACKAGE_MAX_RETRIES reintentos.

@@ -359,7 +359,6 @@ def test_retry_processes_the_same_orders_and_a_late_order_goes_to_the_next_disbu
 @pytest.fixture
 def packages_with_an_infrastructure_failure(settings, daily_merchant, orders_for_all_merchants):
     settings.PACKAGE_MAX_RETRIES = 1
-    settings.PACKAGE_FAILURE_THRESHOLD_PERCENT = 80
     # Con 2 orders por paquete queda un paquete por merchant.
     settings.PACKAGE_MAX_ORDERS = 2
     packages = create_payment_day(PAYMENT_DATE)
@@ -386,7 +385,6 @@ def test_infrastructure_failure_fails_only_its_package_and_can_be_retried(
 
     result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
 
-    # 1 de 3 disbursements del día FAILED (33%) no supera el umbral: se reintenta.
     assert result.to_retry == [failing.id]
     assert DisbursementPackage.objects.count() == 3
     failing.refresh_from_db()

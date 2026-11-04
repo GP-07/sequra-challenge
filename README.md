@@ -78,6 +78,12 @@ docker compose run --rm app python manage.py retry_disbursement_package <package
 - **A backfill run id.** Each run of `create_disbursements_for_range` would get an id that groups
   all the packages it created, so their status can be followed by that single id instead of the
   list of package ids the command prints.
+- **A limit on retries per run.** Today the daily check only retries the packages of its own day
+  (one or two on a normal day), and the packages of a backfill are retried by hand, one by one. If
+  failed packages were ever retried in bulk (for example, all the failed packages of a backfill), a
+  limit on how many packages are re-enqueued per run would keep a database that is already failing
+  from receiving hundreds of retries at once. It would most likely build on the backfill run id
+  above: retry the failed packages of a run, up to the limit, and report the rest.
 
 ## Notes on the provided data
 

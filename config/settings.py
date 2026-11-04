@@ -70,7 +70,6 @@ IMPORT_DIR = Path(os.environ.get("IMPORT_DIR", BASE_DIR / "import_data"))
 PACKAGE_MAX_ORDERS = int(os.environ.get("PACKAGE_MAX_ORDERS", "5000"))
 # Reintentos automáticos de un paquete: uno por cada check que no es el último.
 PACKAGE_MAX_RETRIES = int(os.environ.get("PACKAGE_MAX_RETRIES", "2"))
-PACKAGE_FAILURE_THRESHOLD_PERCENT = int(os.environ.get("PACKAGE_FAILURE_THRESHOLD_PERCENT", "80"))
 # Límite por query al procesar un paquete: corta una query colgada (medido: la más lenta, ~0,2 s).
 PACKAGE_STATEMENT_TIMEOUT_SECONDS = int(os.environ.get("PACKAGE_STATEMENT_TIMEOUT_SECONDS", "5"))
 # Un paquete en PROCESSING sin lock y con más de estos minutos se considera trabado (medido: ~0,3 s el más lento).
