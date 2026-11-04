@@ -172,3 +172,45 @@ Times in UTC. Processing has to be finished by 08:00.
 - A backfill run id, to follow all its packages by a single id.
   [More](docs/improvements.md#a-backfill-run-id)
 - A limit on retries per run. [More](docs/improvements.md#a-limit-on-retries-per-run)
+
+## How I used AI
+
+I used Claude Code throughout the challenge, as a pair: I made the decisions and reviewed everything,
+and Claude analyzed, proposed, implemented and measured. All the code was implemented by Claude under
+my review; I did not write code outside of it.
+
+**Analysis and design before code.** I started by going through the statement with Claude to list
+its ambiguities: the payment window, commission tier limits, monthly fee rules, delayed orders, how
+to report by year. Each one became a question I answered myself, and those answers are the
+[assumptions](docs/assumptions.md). The design was iterated in several rounds before writing code,
+with flow diagrams of the daily flow and the backfill to review it as a whole. The rule for the whole
+process was that Claude had to ask instead of filling gaps on its own.
+
+**Tests first.** Test-driven development is my usual way of working, and I iterated that way here
+too: I defined the use cases, asked for the tests that cover them first, and then iterated the
+implementation until they passed. For example, I defined the integration cases of the daily flow
+myself (processed OK, data failures, infrastructure failures with retries, manual reprocessing, late
+orders, monthly fees with disbursements in every status), and they became the tests that guided the
+following iterations.
+
+**Step-by-step implementation with review.** I implemented in small steps: models and CSV loads,
+disbursement creation, packages, processing, tasks, commands, reporting and Docker. I stopped after
+each step to review the code. Several of my corrections changed the design:
+- I removed rules that the AI had introduced and that the statement does not ask for, for example a
+  validation of the number of orders per disbursement.
+- I removed a failure threshold that turned out to block every automatic retry on a normal day (one
+  or two packages per day).
+- I set the conventions for tests (function-based, with the call under test separated from its
+  asserts, and every calculated field asserted), naming and code organization.
+
+**Decisions based on measurements.** When there was a performance choice, Claude measured the
+alternatives against the full provided data (1.3M orders) and I decided with the numbers: bulk
+creation per day against one transaction per merchant, three ways of assigning orders (one was
+discarded at 2,907 s), and the partial index on pending orders. The results are in
+[docs/backfill.md](docs/backfill.md#measurements).
+
+**Verification.** Claude ran the test suite after every change, including real concurrency tests
+with threads, and ran the whole flow end to end in Docker.
+
+**Persistent context.** Decisions, assumptions and conventions were saved in Claude Code's memory,
+so they stayed consistent across sessions and Claude did not reopen what had already been decided.
