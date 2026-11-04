@@ -21,16 +21,12 @@ Today it is followed through `check_package_status` and the logs. An API or a da
 status of the packages (completed, failed, stuck) would make it easier to follow the daily run and
 the backfill.
 
-## Creating orders one by one
+## Creating orders through a REST API
 
-New orders only enter today through the `load_orders` command. A `create_order` service (and a REST
-endpoint on top of it) to create a single order with its commission would make it easy to keep
-feeding the daily flow and test it end to end.
-
-## A command to generate orders
-
-A `generate_orders` command that creates random orders for existing merchants, for the same purpose:
-exercising the daily creation, packaging and processing with fresh data.
+Today orders only come in through commands: `load_orders` (the provided CSV) and
+`generate_testing_orders` (random test data, to exercise the daily flow). In production, orders would
+come in through REST API endpoints, with serializers validating the input (merchant, amount, date)
+before calculating the commission and saving the order, as the CSV load does today.
 
 ## A backfill run id
 

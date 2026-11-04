@@ -63,6 +63,21 @@ docker compose run --rm app python manage.py retry_disbursement_package <package
 - `retry_disbursement_package` reprocesses a package by hand; `retry_disbursements` does the same
   for some disbursements by id.
 
+Trying the daily flow with test data. `generate_testing_orders` creates 2 new DAILY merchants and
+from 2 to 50 orders for them (50 by default), dated yesterday. Each merchant gets at least one order
+and the rest are spread at random; amounts are random and cover the three commission tiers. Then the
+daily task can be enqueued by hand instead of waiting for 00:05, and the worker log shows creation →
+packaging → processing:
+
+```bash
+docker compose run --rm app python manage.py generate_testing_orders --count 20
+docker compose run --rm app python manage.py shell -c "from disbursements.tasks import create_disbursements_task; create_disbursements_task()"
+docker compose run --rm app python manage.py check_package_status --from <today> --to <today>
+```
+
+These are test data only. In production, orders would come in through a REST API, with serializers
+validating the input (see [improvements](docs/improvements.md#creating-orders-through-a-rest-api)).
+
 Tests run against their own in-memory PostgreSQL (`db_test`), separate from the data:
 
 ```bash
@@ -152,10 +167,8 @@ Times in UTC. Processing has to be finished by 08:00.
   [More](docs/improvements.md#inactive-merchants)
 - An API or dashboard with the status of the packages.
   [More](docs/improvements.md#visibility-of-the-packages-status)
-- Creating orders one by one, through a service and a REST endpoint.
-  [More](docs/improvements.md#creating-orders-one-by-one)
-- A command to generate random orders, to exercise the daily flow.
-  [More](docs/improvements.md#a-command-to-generate-orders)
+- Creating orders through a REST API, with serializers validating the input.
+  [More](docs/improvements.md#creating-orders-through-a-rest-api)
 - A backfill run id, to follow all its packages by a single id.
   [More](docs/improvements.md#a-backfill-run-id)
 - A limit on retries per run. [More](docs/improvements.md#a-limit-on-retries-per-run)
