@@ -1,4 +1,4 @@
-"""Factories de factory_boy para crear datos de prueba."""
+"""factory_boy factories to create test data."""
 
 from datetime import date
 from decimal import Decimal
@@ -11,12 +11,12 @@ from orders.models import Order
 
 
 class OrderFactory(DjangoModelFactory):
-    """commission_fee es explícita para no depender del cálculo."""
+    """commission_fee is explicit so as not to depend on the calculation."""
 
     class Meta:
         model = Order
 
-    external_id = factory.Sequence(lambda n: f"order{n:07d}")
+    external_id = factory.Sequence(lambda number: f"order{number:07d}")
     merchant = factory.SubFactory(MerchantFactory)
     amount = Decimal("100.00")
     commission_fee = Decimal("0.95")

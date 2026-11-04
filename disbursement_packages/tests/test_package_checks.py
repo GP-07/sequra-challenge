@@ -1,10 +1,10 @@
-"""check_disbursement_packages: corre en varios horarios y decide por los disbursements FAILED del día.
+"""check_disbursement_packages: runs at several hours and decides based on the day's FAILED disbursements.
 
-- COMPLETED, FAILED no retryable y FAILED en el último horario son finales.
-- FAILED retryable con reintentos disponibles y antes del último horario: se reintenta.
-- Antes de decidir, los paquetes del día trabados en PROCESSING se liberan como FAILED retryable.
+- COMPLETED, FAILED not retryable and FAILED on the last run are final.
+- FAILED retryable with retries left and before the last run: it is retried.
+- Before deciding, the day's packages stuck in PROCESSING are released as FAILED retryable.
 
-Cada paquete de estos tests tiene un solo disbursement, con la fecha de pago del día que se controla.
+Each package in these tests has a single disbursement, with the payment date of the checked day.
 """
 
 import logging
@@ -26,7 +26,7 @@ Status = DisbursementPackage.Status
 RUN_DATE = date(2023, 2, 8)
 
 
-# Status del disbursement según cómo terminó su paquete.
+# Disbursement status depending on how its package ended.
 DISBURSEMENT_STATUS = {
     Status.PENDING: Disbursement.Status.PENDING,
     Status.PROCESSING: Disbursement.Status.PENDING,
@@ -43,7 +43,7 @@ def package_of(status, payment_date=RUN_DATE, is_retryable=None, attempts=1):
 
 
 def stuck_package_of(payment_date=RUN_DATE):
-    """Paquete en PROCESSING desde hace más de PACKAGE_STUCK_AFTER_MINUTES y sin worker que lo tenga."""
+    """Package in PROCESSING for more than PACKAGE_STUCK_AFTER_MINUTES and without a worker holding it."""
     package = package_of(Status.PROCESSING, payment_date=payment_date)
     DisbursementPackage.objects.filter(id=package.id).update(updated_at=timezone.now() - timedelta(minutes=30))
     return package
@@ -55,7 +55,7 @@ def default_settings(settings):
 
 
 def levels(caplog):
-    return [r.levelno for r in caplog.records if r.name == "disbursements.alerts"]
+    return [record.levelno for record in caplog.records if record.name == "disbursements.alerts"]
 
 
 def test_completed_packages_need_nothing(caplog):
@@ -109,7 +109,7 @@ def test_retryable_failure_without_retries_left_is_critical_and_not_retried(capl
 
 
 def test_all_the_packages_of_the_day_failing_are_retried():
-    # El caso de un día normal: uno o dos paquetes, y fallan todos sus disbursements.
+    # The case of a normal day: one or two packages, and all their disbursements fail.
     retryable = [package_of(Status.FAILED, is_retryable=True) for _ in range(2)]
 
     result = check_disbursement_packages(RUN_DATE, is_last_run=False)
@@ -175,7 +175,7 @@ def test_stuck_package_of_another_day_is_not_released():
 
 
 def test_package_with_retryable_and_non_retryable_failures_alerts_and_is_retried(caplog):
-    # Reintentarlo vuelve a procesar ambos: el no retryable falla igual hasta que se corrija.
+    # Retrying it processes both again: the non-retryable one keeps failing until it is fixed.
     retryable = DisbursementFactory(payment_date=RUN_DATE, status=Disbursement.Status.FAILED, is_retryable=True)
     non_retryable = DisbursementFactory(payment_date=RUN_DATE, status=Disbursement.Status.FAILED, is_retryable=False)
     package = DisbursementPackageFactory(disbursements=[retryable, non_retryable], status=Status.FAILED, attempts=1)

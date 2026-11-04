@@ -1,4 +1,4 @@
-"""load_orders: carga de orders desde un CSV de la carpeta de importación."""
+"""load_orders: loading orders from a CSV in the import folder."""
 
 from decimal import Decimal
 from pathlib import Path
@@ -12,13 +12,13 @@ from orders.models import Order
 
 pytestmark = pytest.mark.django_db
 
-# CSVs de prueba, con el mismo formato que los del challenge.
+# Test CSV files, with the same format as the challenge ones.
 DATA_DIR = Path(__file__).parent / "data"
 
 
 @pytest.fixture
 def merchants():
-    # Los merchants a los que apuntan los CSV de orders.
+    # The merchants the orders CSV files point to.
     MerchantFactory(reference="padberg_group")
     MerchantFactory(reference="deckow_gibson")
 
@@ -51,7 +51,7 @@ def test_load_orders_is_idempotent_by_id(merchants, orders_csv):
 
 
 def test_load_orders_invalid_rows_are_skipped_and_reported(merchants, import_dir):
-    # Merchant desconocido, monto negativo, monto no numérico y fecha inválidos.
+    # Unknown merchant, negative amount, non-numeric amount and invalid date.
     put_in_import_dir(import_dir, DATA_DIR / "orders_with_invalid_rows.csv", "orders.csv")
 
     output = run_command("load_orders", "orders.csv")

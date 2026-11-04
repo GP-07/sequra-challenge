@@ -1,4 +1,4 @@
-"""release_stuck_packages: libera los paquetes trabados en PROCESSING sin tocar los que un worker procesa."""
+"""release_stuck_packages: releases the packages stuck in PROCESSING without touching the ones a worker is processing."""
 
 import threading
 from datetime import date, timedelta
@@ -26,7 +26,7 @@ LET_PROCESSING_FINISH = threading.Event()
 
 
 def package_with(status, minutes_in_status):
-    """Paquete con un disbursement COMPLETED y otro PENDING, en `status` desde hace `minutes_in_status`."""
+    """Package with one COMPLETED and one PENDING disbursement, in `status` for `minutes_in_status`."""
     disbursements = []
     for reference, disbursement_status in (("a_merchant", Disbursement.Status.COMPLETED), ("b_merchant", Disbursement.Status.PENDING)):
         merchant = MerchantFactory(reference=reference)
@@ -58,7 +58,7 @@ def process_in_another_worker(package_id):
 
 @pytest.mark.django_db
 def test_stuck_package_is_released_with_its_unfinished_disbursements_failed_and_retryable(settings):
-    # Nadie tiene el lock: el worker que lo tomaba murió.
+    # Nobody holds the lock: the worker that had it died.
     settings.PACKAGE_STUCK_AFTER_MINUTES = 5
     package = package_with(Status.PROCESSING, minutes_in_status=10)
 
@@ -69,11 +69,11 @@ def test_stuck_package_is_released_with_its_unfinished_disbursements_failed_and_
     package.refresh_from_db()
     assert package.status == Status.FAILED
     assert package.attempts == 1
-    b = Disbursement.objects.get(merchant__reference="b_merchant")
-    assert (b.status, b.is_retryable, b.error) == (Disbursement.Status.FAILED, True, STUCK_PACKAGE_ERROR)
-    # Lo que ya estaba COMPLETED no se toca.
-    a = Disbursement.objects.get(merchant__reference="a_merchant")
-    assert (a.status, a.error) == (Disbursement.Status.COMPLETED, "")
+    disbursement_b = Disbursement.objects.get(merchant__reference="b_merchant")
+    assert (disbursement_b.status, disbursement_b.is_retryable, disbursement_b.error) == (Disbursement.Status.FAILED, True, STUCK_PACKAGE_ERROR)
+    # What was already COMPLETED is not touched.
+    disbursement_a = Disbursement.objects.get(merchant__reference="a_merchant")
+    assert (disbursement_a.status, disbursement_a.error) == (Disbursement.Status.COMPLETED, "")
 
 
 @pytest.mark.django_db
@@ -104,8 +104,8 @@ def test_packages_not_in_processing_or_unknown_are_reported_and_left_alone():
 
 @pytest.mark.django_db(transaction=True)
 def test_package_a_live_worker_is_processing_is_never_released(settings):
-    # Concurrencia real: otro worker (otro thread, otra conexión) está en plena transacción de
-    # procesamiento, con el lock del paquete tomado. Con 0 minutos, solo el lock lo protege.
+    # Real concurrency: another worker (another thread, another connection) is in the middle of the
+    # processing transaction, holding the package lock. With 0 minutes, only the lock protects it.
     settings.PACKAGE_STUCK_AFTER_MINUTES = 0
     package = package_with(Status.PENDING, minutes_in_status=0)
     PROCESSING_STARTED.clear()

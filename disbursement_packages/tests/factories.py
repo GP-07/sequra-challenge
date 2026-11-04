@@ -1,4 +1,4 @@
-"""Factories de factory_boy para crear datos de prueba."""
+"""factory_boy factories to create test data."""
 
 import factory
 from factory.django import DjangoModelFactory
@@ -9,7 +9,7 @@ from orders.models import Order
 
 
 class DisbursementPackageFactory(DjangoModelFactory):
-    """`disbursements=[...]` los asigna al paquete; order_count se cuenta desde sus orders."""
+    """`disbursements=[...]` assigns them to the package; order_count is counted from their orders."""
 
     class Meta:
         model = DisbursementPackage
@@ -19,6 +19,6 @@ class DisbursementPackageFactory(DjangoModelFactory):
     def disbursements(self, create, extracted, **kwargs):
         if not create or not extracted:
             return
-        Disbursement.objects.filter(id__in=[d.id for d in extracted]).update(package=self)
+        Disbursement.objects.filter(id__in=[disbursement.id for disbursement in extracted]).update(package=self)
         self.order_count = Order.objects.filter(disbursement__package=self).count()
         self.save(update_fields=["order_count"])

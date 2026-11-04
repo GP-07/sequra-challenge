@@ -1,12 +1,12 @@
-"""Liberar paquetes trabados en PROCESSING (el worker murió a mitad del procesamiento).
+"""Releasing packages stuck in PROCESSING (the worker died in the middle of the processing).
 
-Un paquete está trabado si está en PROCESSING hace más de PACKAGE_STUCK_AFTER_MINUTES y nadie tiene
-el lock de su fila. Mientras un worker vivo lo procesa, la transacción de cálculo mantiene ese lock
-(lock_package_while_processing); si el worker muere, Postgres lo libera al cortarse la conexión.
+A package is stuck if it has been in PROCESSING for more than PACKAGE_STUCK_AFTER_MINUTES and nobody
+holds the lock on its row. While a live worker processes it, the calculation transaction keeps that
+lock (lock_package_while_processing); if the worker dies, Postgres releases it when the connection drops.
 
-Se buscan con FOR UPDATE SKIP LOCKED, así que un paquete que se está procesando nunca se toca (ni se
-espera). Al liberarlo, el paquete y sus disbursements sin terminar quedan FAILED retryable, listos
-para retry_disbursement_package.
+They are searched with FOR UPDATE SKIP LOCKED, so a package being processed is never touched (nor
+waited for). When it is released, the package and its unfinished disbursements become FAILED
+retryable, ready for retry_disbursement_package.
 """
 
 from datetime import timedelta
@@ -40,7 +40,7 @@ def release_stuck_packages(package_ids: list[int]) -> ReleaseResult:
         return result
 
     with transaction.atomic():
-        # Las filas bloqueadas por un worker vivo no vuelven: SKIP LOCKED las saltea sin esperar.
+        # Rows locked by a live worker are not returned: SKIP LOCKED skips them without waiting.
         stuck = set(
             DisbursementPackage.objects.select_for_update(skip_locked=True)
             .filter(id__in=candidates, status=DisbursementPackage.Status.PROCESSING, updated_at__lte=cutoff)

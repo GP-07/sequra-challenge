@@ -2,7 +2,7 @@ from django.apps import AppConfig
 
 
 class CoreConfig(AppConfig):
-    """Lo que comparten las apps de dominio. No tiene modelos."""
+    """What the domain apps share. It has no models."""
 
     default_auto_field = "django.db.models.BigAutoField"
     name = "core"

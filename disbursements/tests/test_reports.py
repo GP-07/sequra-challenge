@@ -1,6 +1,6 @@
-"""Tabla anual del README.
+"""Yearly table of the README.
 
-Assumptions: los disbursements se imputan por fecha de pago, y la monthly fee al mes que cubre.
+Assumptions: disbursements count by payment date, and the monthly fee by the month it covers.
 """
 
 from datetime import date
@@ -33,10 +33,10 @@ def test_yearly_rows():
     merchant = MerchantFactory(reference="padberg_group", live_on=date(2022, 1, 1))
     other = MerchantFactory(reference="windler_and_sons", live_on=date(2022, 1, 1))
     completed(merchant, date(2022, 12, 30), "100.00", "0.95")
-    # Orders del 31/12 pagadas el 1/1: cuentan en 2023.
+    # Orders of 12/31 paid on 1/1: they count in 2023.
     completed(merchant, date(2023, 1, 1), "200.00", "1.90")
     completed(other, date(2023, 1, 2), "50.00", "0.48")
-    # La monthly fee de diciembre se calcula en enero, pero cuenta en 2022.
+    # December's monthly fee is calculated in January, but it counts in 2022.
     MonthlyFee.objects.create(
         merchant=merchant, month=date(2022, 12, 1), commissions_amount=Decimal("5.00"),
         minimum_monthly_fee=Decimal("29.00"), amount=Decimal("24.00"),

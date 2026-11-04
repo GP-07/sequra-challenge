@@ -1,6 +1,6 @@
-"""Operaciones sobre disbursements que usan otras apps (paquetes), con nombres de negocio.
+"""Operations on disbursements used by other apps (packages), with business names.
 
-Las otras apps llaman a estos métodos en lugar de filtrar o actualizar el modelo directamente.
+The other apps call these methods instead of filtering or updating the model directly.
 """
 
 from django.db import models
@@ -14,13 +14,13 @@ from disbursements.data_classes import DisbursementTotals, YearlyDisbursementTot
 
 
 class DisbursementQuerySet(models.QuerySet):
-    # --- armado de paquetes ---
+    # --- packaging ---
 
     def to_package(self, date_from, date_to):
-        """PENDING sin paquete con fecha de pago en el rango, en orden determinístico y bloqueados (FOR UPDATE).
+        """PENDING without a package and with a payment date in the range, in a deterministic order and locked (FOR UPDATE).
 
-        Se usa dentro de una transacción: si dos corridas arman paquetes a la vez, la segunda espera y
-        ya no ve los que quedaron con paquete.
+        Used inside a transaction: if two runs build packages at the same time, the second one waits and
+        no longer sees the ones that got a package.
         """
         return (
             self.select_for_update(of=("self",))
@@ -30,8 +30,8 @@ class DisbursementQuerySet(models.QuerySet):
         )
 
     def order_counts(self, disbursement_ids) -> dict[int, int]:
-        """Una sola query: {disbursement_id: cantidad de orders}. Va aparte de to_package porque
-        Postgres no permite FOR UPDATE con GROUP BY.
+        """A single query: {disbursement_id: number of orders}. Separate from to_package because
+        Postgres does not allow FOR UPDATE with GROUP BY.
         """
         rows = self.filter(id__in=disbursement_ids).order_by().annotate(orders_found=Count("orders"))
         return dict(rows.values_list("id", "orders_found"))
@@ -44,17 +44,17 @@ class DisbursementQuerySet(models.QuerySet):
             status=self.model.Status.REQUIRES_ATTENTION, updated_at=timezone.now()
         )
 
-    # --- procesamiento de paquetes ---
+    # --- package processing ---
 
     def unfinished_in_package(self, package_id, disbursement_ids=None):
-        """Los que falta procesar de un paquete (PENDING o FAILED); con disbursement_ids, solo esos."""
+        """The ones of a package still to be processed (PENDING or FAILED); with disbursement_ids, only those."""
         queryset = self.filter(package_id=package_id, status__in=[self.model.Status.PENDING, self.model.Status.FAILED])
         if disbursement_ids is not None:
             queryset = queryset.filter(id__in=disbursement_ids)
         return queryset
 
     def totals(self) -> dict[int, DisbursementTotals]:
-        """Una sola query: bruto y comisiones de cada disbursement del queryset."""
+        """A single query: gross amount and commissions of each disbursement of the queryset."""
         rows = self.order_by().annotate(
             gross=Sum("orders__amount"),
             fees=Sum("orders__commission_fee"),
@@ -68,16 +68,16 @@ class DisbursementQuerySet(models.QuerySet):
         now = timezone.now()
         disbursements = [
             self.model(
-                id=t.disbursement_id,
+                id=disbursement_totals.disbursement_id,
                 status=self.model.Status.COMPLETED,
-                gross_amount=t.gross_amount,
-                commission_fee_amount=t.commission_fee_amount,
-                disbursed_amount=t.gross_amount - t.commission_fee_amount,
+                gross_amount=disbursement_totals.gross_amount,
+                commission_fee_amount=disbursement_totals.commission_fee_amount,
+                disbursed_amount=disbursement_totals.gross_amount - disbursement_totals.commission_fee_amount,
                 error="",
                 is_retryable=None,
                 updated_at=now,
             )
-            for t in totals
+            for disbursement_totals in totals
         ]
         self.bulk_update(
             disbursements,
@@ -86,7 +86,7 @@ class DisbursementQuerySet(models.QuerySet):
         )
 
     def mark_as_failed_with_errors(self, failures: list[tuple[int, str]], *, is_retryable: bool) -> None:
-        """Cada uno con su propio error (falla de datos de un disbursement)."""
+        """Each one with its own error (data failure of a disbursement)."""
         now = timezone.now()
         disbursements = [
             self.model(
@@ -108,7 +108,7 @@ class DisbursementQuerySet(models.QuerySet):
         )
 
     def mark_as_failed(self, error: str, *, is_retryable: bool) -> int:
-        """Todos los del queryset con el mismo error (falla de infraestructura o inesperada)."""
+        """All of the queryset with the same error (infrastructure or unexpected failure)."""
         return self.update(
             status=self.model.Status.FAILED,
             error=error,
@@ -119,13 +119,13 @@ class DisbursementQuerySet(models.QuerySet):
             updated_at=timezone.now(),
         )
 
-    # --- control de paquetes ---
+    # --- package checks ---
 
     def packaged_for_payment_date(self, payment_date):
         return self.filter(payment_date=payment_date, package__isnull=False)
 
     def package_ids_for_payment_dates(self, date_from, date_to) -> set[int]:
-        """Una sola query: ids de los paquetes de los disbursements con fecha de pago en el rango."""
+        """A single query: ids of the packages of the disbursements with a payment date in the range."""
         rows = self.filter(payment_date__range=(date_from, date_to), package__isnull=False).order_by()
         return set(rows.values_list("package_id", flat=True).distinct())
 
@@ -135,7 +135,7 @@ class DisbursementQuerySet(models.QuerySet):
     # --- reporting ---
 
     def completed_totals_by_year(self) -> dict[int, YearlyDisbursementTotals]:
-        """Una sola query: cantidad, monto pagado y comisiones de los COMPLETED por año de su fecha de pago."""
+        """A single query: count, paid amount and commissions of the COMPLETED ones by year of their payment date."""
         rows = (
             self.filter(status=self.model.Status.COMPLETED)
             .order_by()

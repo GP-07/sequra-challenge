@@ -1,4 +1,4 @@
-"""Cómo se engancha la task mensual. La lógica de negocio se prueba en el servicio."""
+"""How the monthly task is wired. The business logic is tested in the service."""
 
 from datetime import date, datetime, timezone
 from unittest import mock
@@ -12,7 +12,7 @@ from fees import tasks
     ("run_at", "previous_month"),
     (
         (datetime(2023, 3, 1, 0, 30, tzinfo=timezone.utc), date(2023, 2, 1)),
-        # Enero calcula diciembre del año anterior.
+        # January calculates December of the previous year.
         (datetime(2023, 1, 1, 0, 30, tzinfo=timezone.utc), date(2022, 12, 1)),
     ),
 )

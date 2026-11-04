@@ -1,7 +1,7 @@
-"""Task diaria de creación de disbursements.
+"""Daily disbursement creation task.
 
-A las 00:05 UTC crea los disbursements DAILY y WEEKLY del día y, al terminar, encola el armado de
-paquetes: así el armado siempre corre después de la creación, sin un horario propio.
+At 00:05 UTC it creates the DAILY and WEEKLY disbursements of the day and, when it finishes, enqueues
+the packaging: this way packaging always runs after creation, without a schedule of its own.
 """
 
 from django.utils import timezone
@@ -26,9 +26,9 @@ def now():
     context=True,
 )
 def create_disbursements_task(task=None):
-    """Si falla, huey la reintenta; es idempotente, así que no duplica lo que ya se creó.
+    """If it fails, huey retries it; it is idempotent, so it does not duplicate what was already created.
 
-    En el último intento fallido alerta (CRITICAL) y no se arma ningún paquete.
+    On the last failed attempt it alerts (CRITICAL) and no package is built.
     """
     payment_date = now().date()
     try:

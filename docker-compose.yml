@@ -1,10 +1,10 @@
-# Servicios:
-# - db y redis: Postgres y Redis (cola de huey).
-# - migrate: aplica las migraciones y termina; el worker arranca recién cuando terminó bien.
-# - worker: consumer de huey, con las periodic tasks (horarios en UTC).
-# - app (perfil tools): para correr comandos, por ejemplo
+# Services:
+# - db and redis: Postgres and Redis (huey queue).
+# - migrate: applies the migrations and exits; the worker only starts once it finished successfully.
+# - worker: huey consumer, with the periodic tasks (times in UTC).
+# - app (tools profile): to run commands, for example
 #   docker compose run --rm app python manage.py load_merchants merchants.csv
-# - test y db_test (perfil test): tests contra un Postgres propio, en memoria y sin volumen.
+# - test and db_test (test profile): tests against their own in-memory Postgres, without a volume.
 #   docker compose run --rm test
 
 x-app: &app
@@ -19,7 +19,7 @@ x-app: &app
     HUEY_WORKERS: ${HUEY_WORKERS:-4}
     IMPORT_DIR: /app/import_data
   volumes:
-    # Los CSV para load_merchants y load_orders se dejan en ./import_data.
+    # The CSV files for load_merchants and load_orders go in ./import_data.
     - ./import_data:/app/import_data
 
 services:

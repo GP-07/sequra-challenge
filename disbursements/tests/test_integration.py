@@ -1,12 +1,12 @@
-"""Integración: el flujo completo de un día de pago con los servicios reales, sin huey.
+"""Integration: the whole flow of a payment day with the real services, without huey.
 
-Un día de pago: create_disbursements (DAILY y WEEKLY) → create_disbursement_packages →
-process_disbursement_package de cada paquete. Es lo que hacen las tasks, llamado en orden.
+A payment day: create_disbursements (DAILY and WEEKLY) → create_disbursement_packages →
+process_disbursement_package for each package. It is what the tasks do, called in order.
 
-Datos base (pago del miércoles 8/2):
-- padberg_group (DAILY): 2 orders del 7/2 → 533.21 bruto, 4.63 de comisiones, 528.58 a pagar.
-- rempel_ltd (DAILY): 1 order del 7/2 → 10.50, 0.11, 10.39.
-- deckow_gibson (WEEKLY, live_on miércoles): orders del 1/2 y del 6/2 → 250.00, 2.38, 247.62.
+Base data (payment of Wednesday 2/8):
+- padberg_group (DAILY): 2 orders of 2/7 → 533.21 gross, 4.63 in commissions, 528.58 to pay.
+- rempel_ltd (DAILY): 1 order of 2/7 → 10.50, 0.11, 10.39.
+- deckow_gibson (WEEKLY, live_on Wednesday): orders of 2/1 and 2/6 → 250.00, 2.38, 247.62.
 """
 
 from datetime import date
@@ -39,14 +39,14 @@ WEEKLY = Merchant.Frequency.WEEKLY
 COMPLETED = Disbursement.Status.COMPLETED
 FAILED = Disbursement.Status.FAILED
 
-# Miércoles.
+# Wednesday.
 PAYMENT_DATE = date(2023, 2, 8)
 YESTERDAY = date(2023, 2, 7)
 SERVICE = "disbursement_packages.services.package_processing"
 
 
 def create_payment_day(payment_date):
-    """Crea los disbursements del día y los empaqueta, sin procesarlos. Devuelve los paquetes."""
+    """Creates the disbursements of the day and packages them, without processing them. Returns the packages."""
     create_disbursements(payment_date, DAILY)
     create_disbursements(payment_date, WEEKLY)
     return create_disbursement_packages(payment_date).packages
@@ -66,7 +66,7 @@ def amounts(disbursement):
 
 
 def snapshot():
-    """Todo lo que deja el proceso en las tablas, para comparar antes y después."""
+    """Everything the process leaves in the tables, to compare before and after."""
     return {
         "disbursements": list(
             Disbursement.objects.order_by("id").values(
@@ -95,7 +95,7 @@ def other_daily_merchant():
 
 @pytest.fixture
 def weekly_merchant():
-    # 2023-01-04 es miércoles: cobra los miércoles.
+    # 2023-01-04 is a Wednesday: paid on Wednesdays.
     return MerchantFactory(reference="deckow_gibson", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 4))
 
 
@@ -113,9 +113,9 @@ def orders_for_all_merchants(daily_merchant, other_daily_merchant, weekly_mercha
 def test_disbursements_of_daily_and_weekly_merchants_are_created_and_processed(
     daily_merchant, other_daily_merchant, weekly_merchant, orders_for_all_merchants
 ):
-    """Caso 1: merchants daily y weekly, todos con orders.
+    """Case 1: daily and weekly merchants, all of them with orders.
 
-    Se crean los disbursements y se procesan OK.
+    The disbursements are created and processed OK.
     """
     run_payment_day(PAYMENT_DATE)
 
@@ -139,7 +139,7 @@ def test_disbursements_of_daily_and_weekly_merchants_are_created_and_processed(
     assert deckow.has_processed_delayed_orders is False
     assert amounts(deckow) == (Decimal("250.00"), Decimal("2.38"), Decimal("247.62"))
     assert not Order.objects.filter(disbursement__isnull=True).exists()
-    # Un día normal entra en un solo paquete.
+    # A normal day fits in a single package.
     assert DisbursementPackage.objects.count() == 1
     package = padberg.package
     assert package.status == DisbursementPackage.Status.COMPLETED
@@ -150,13 +150,13 @@ def test_disbursements_of_daily_and_weekly_merchants_are_created_and_processed(
 # --- caso 2 ---
 
 def test_only_merchants_with_orders_get_a_disbursement(daily_merchant, weekly_merchant):
-    """Caso 2: merchants daily y weekly, pero solo algunos con orders.
+    """Case 2: daily and weekly merchants, but only some of them with orders.
 
-    Se crean disbursements solo para los que tienen orders y se procesan OK.
+    Disbursements are created only for the ones with orders, and processed OK.
     """
     OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY, amount="100.00", commission_fee="0.95")
     OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 1), amount="200.00", commission_fee="1.90")
-    # Un DAILY y un WEEKLY (también de miércoles) sin orders.
+    # A DAILY and a WEEKLY (also on Wednesdays) without orders.
     MerchantFactory(reference="rempel_ltd", disbursement_frequency=DAILY, live_on=date(2023, 1, 1))
     MerchantFactory(reference="kunze_inc", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 4))
 
@@ -183,14 +183,14 @@ def test_only_merchants_with_orders_get_a_disbursement(daily_merchant, weekly_me
 def test_delayed_orders_are_paid_in_the_next_payment_and_flagged(
     daily_merchant, other_daily_merchant, weekly_merchant, orders_for_all_merchants
 ):
-    """Caso 3: merchants daily y weekly con orders, algunas de fechas viejas que entraron tarde.
+    """Case 3: daily and weekly merchants with orders, some of them from old dates that arrived late.
 
-    Los disbursements incluyen esas orders, se procesan OK y quedan marcados con
-    has_processed_delayed_orders para saber que pagaron algo de otra fecha.
+    The disbursements include those orders, are processed OK and are flagged with
+    has_processed_delayed_orders, to know they paid something from another date.
     """
-    # Orders de fechas viejas que entraron tarde y nunca se pagaron: fuera de la ventana de esta corrida.
+    # Orders from old dates that arrived late and were never paid: outside the window of this run.
     delayed_daily = OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, 3), amount="20.00", commission_fee="0.20")
-    # deckow_gibson cobra del 1/2 al 7/2: la del 25/1 es de la semana anterior.
+    # deckow_gibson is paid from 2/1 to 2/7: the one of 1/25 is from the previous week.
     delayed_weekly = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 1, 25), amount="30.00", commission_fee="0.30")
 
     run_payment_day(PAYMENT_DATE)
@@ -209,7 +209,7 @@ def test_delayed_orders_are_paid_in_the_next_payment_and_flagged(
     assert deckow.orders.count() == 3
     assert deckow.has_processed_delayed_orders is True
     assert amounts(deckow) == (Decimal("280.00"), Decimal("2.68"), Decimal("277.32"))
-    # rempel_ltd no tiene orders atrasadas: no se marca.
+    # rempel_ltd has no delayed orders: it is not flagged.
     rempel = disbursement_of(other_daily_merchant)
     assert rempel.status == COMPLETED
     assert rempel.has_processed_delayed_orders is False
@@ -219,16 +219,16 @@ def test_delayed_orders_are_paid_in_the_next_payment_and_flagged(
 # --- caso 4 ---
 
 def test_reprocessing_what_is_already_completed_does_not_duplicate_or_change_anything(orders_for_all_merchants):
-    """Caso 4: merchants daily y weekly con orders; se crean los disbursements y se procesan OK.
+    """Case 4: daily and weekly merchants with orders; the disbursements are created and processed OK.
 
-    Después se reprocesa lo mismo (el paquete y los disbursements por id): no se duplican registros
-    ni cambian los resultados.
+    Then the same is reprocessed (the package, and the disbursements by id): no records are duplicated
+    and the results do not change.
     """
-    # El reprocess es manual y acotado: un paquete o algunos disbursements por id, nunca el día entero.
+    # Reprocessing is manual and limited: a package or some disbursements by id, never the whole day.
     run_payment_day(PAYMENT_DATE)
     before = snapshot()
     package_id = before["packages"][0]["id"]
-    disbursement_ids = [str(d["id"]) for d in before["disbursements"]]
+    disbursement_ids = [str(disbursement["id"]) for disbursement in before["disbursements"]]
 
     package_output = StringIO()
     call_command("retry_disbursement_package", str(package_id), stdout=package_output)
@@ -243,12 +243,12 @@ def test_reprocessing_what_is_already_completed_does_not_duplicate_or_change_any
     assert "Skipped (already completed): 3" in disbursements_output.getvalue()
 
 
-# --- caso 5 y 5 bis: falla de datos, sin reintento automático ---
+# --- cases 5 and 5 bis: data failure, without automatic retry ---
 
 @pytest.fixture
 def package_with_a_data_failure(other_daily_merchant, orders_for_all_merchants):
     (package,) = create_payment_day(PAYMENT_DATE)
-    # Dato inconsistente: la comisión de la order de rempel_ltd supera su monto.
+    # Inconsistent data: the commission of rempel_ltd's order is greater than its amount.
     Order.objects.filter(merchant=other_daily_merchant).update(commission_fee="20.00")
     process_disbursement_package(package.id)
     return package
@@ -257,10 +257,10 @@ def package_with_a_data_failure(other_daily_merchant, orders_for_all_merchants):
 def test_data_failure_leaves_the_valid_disbursements_completed_and_is_not_retried(
     daily_merchant, other_daily_merchant, weekly_merchant, package_with_a_data_failure
 ):
-    """Caso 5: merchants daily y weekly con orders; algunos disbursements se procesan OK y otros fallan
-    por datos, sin posibilidad de reintentar.
+    """Case 5: daily and weekly merchants with orders; some disbursements are processed OK and others
+    fail because of data, with no possible retry.
 
-    Se valida cómo quedan disbursements, paquete y orders, y que el control no lo reintenta.
+    It checks how disbursements, package and orders end up, and that the check does not retry it.
     """
     package = package_with_a_data_failure
     result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
@@ -282,20 +282,20 @@ def test_data_failure_leaves_the_valid_disbursements_completed_and_is_not_retrie
     assert rempel.is_retryable is False
     assert "greater than the gross amount" in rempel.error
     assert amounts(rempel) == (None, None, None)
-    # Las orders siguen asignadas a su disbursement, aunque haya fallado.
+    # The orders stay assigned to their disbursement, even though it failed.
     assert not Order.objects.filter(disbursement__isnull=True).exists()
 
 
 def test_data_failure_is_fixed_by_a_user_and_the_manual_retry_completes_the_package(
     daily_merchant, other_daily_merchant, weekly_merchant, package_with_a_data_failure
 ):
-    """Caso 5 bis: lo mismo que el caso 5, y después un usuario corrige el dato y reprocesa a mano.
+    """Case 5 bis: the same as case 5, and then a user fixes the data and reprocesses by hand.
 
-    El proceso termina OK y lo que ya estaba COMPLETED no se toca.
+    The process ends OK and what was already COMPLETED is not touched.
     """
     package = package_with_a_data_failure
-    completed_before = [d for d in snapshot()["disbursements"] if d["status"] == COMPLETED]
-    # Un usuario corrige el dato y reprocesa el paquete a mano.
+    completed_before = [disbursement for disbursement in snapshot()["disbursements"] if disbursement["status"] == COMPLETED]
+    # A user fixes the data and reprocesses the package by hand.
     Order.objects.filter(merchant=other_daily_merchant).update(commission_fee="0.11")
 
     call_command("retry_disbursement_package", str(package.id))
@@ -308,28 +308,28 @@ def test_data_failure_is_fixed_by_a_user_and_the_manual_retry_completes_the_pack
     assert rempel.error == ""
     assert rempel.is_retryable is None
     assert amounts(rempel) == (Decimal("10.50"), Decimal("0.11"), Decimal("10.39"))
-    # Los que ya estaban COMPLETED no se vuelven a tocar.
-    completed_after = [d for d in snapshot()["disbursements"] if d["id"] in {c["id"] for c in completed_before}]
+    # The ones already COMPLETED are not touched again.
+    completed_after = [disbursement for disbursement in snapshot()["disbursements"] if disbursement["id"] in {completed["id"] for completed in completed_before}]
     assert completed_after == completed_before
 
 
 def test_retry_processes_the_same_orders_and_a_late_order_goes_to_the_next_disbursement(
     other_daily_merchant, package_with_a_data_failure
 ):
-    """Caso 5 ter: lo mismo que el caso 5 bis, pero antes del reintento llega tarde una order del mismo
-    día y ya se creó y empaquetó el disbursement del día siguiente, que la incluye.
+    """Case 5 ter: the same as case 5 bis, but before the retry a late order of the same day arrives,
+    and the disbursement of the next day, which includes it, is already created and packaged.
 
-    Un disbursement no cambia una vez creado: el reintento procesa las mismas orders del disbursement
-    que falló y no toca el disbursement ni el paquete del día siguiente.
+    A disbursement does not change once created: the retry processes the same orders of the failed
+    disbursement and does not touch the disbursement or the package of the next day.
     """
     package = package_with_a_data_failure
     late_order = OrderFactory(merchant=other_daily_merchant, order_creation_date=YESTERDAY, amount="99.00", commission_fee="0.94")
     next_payment_date = date(2023, 2, 9)
     (next_package,) = create_payment_day(next_payment_date)
     next_disbursement = Disbursement.objects.get(merchant=other_daily_merchant, payment_date=next_payment_date)
-    next_disbursement_before = [d for d in snapshot()["disbursements"] if d["id"] == next_disbursement.id]
-    next_package_before = [p for p in snapshot()["packages"] if p["id"] == next_package.id]
-    # Un usuario corrige el dato de la order del disbursement que falló y reprocesa a mano.
+    next_disbursement_before = [disbursement for disbursement in snapshot()["disbursements"] if disbursement["id"] == next_disbursement.id]
+    next_package_before = [package for package in snapshot()["packages"] if package["id"] == next_package.id]
+    # A user fixes the data of the order of the failed disbursement and reprocesses by hand.
     Order.objects.filter(merchant=other_daily_merchant, order_creation_date=YESTERDAY).exclude(id=late_order.id).update(
         commission_fee="0.11"
     )
@@ -345,27 +345,27 @@ def test_retry_processes_the_same_orders_and_a_late_order_goes_to_the_next_disbu
     assert set(package.disbursements.values_list("id", flat=True)) == set(
         Disbursement.objects.filter(payment_date=PAYMENT_DATE).values_list("id", flat=True)
     )
-    # La order tardía quedó en el disbursement del día siguiente, que el reintento no tocó.
+    # The late order is in the disbursement of the next day, which the retry did not touch.
     late_order.refresh_from_db()
     assert late_order.disbursement_id == next_disbursement.id
     assert next_disbursement.package_id == next_package.id
     assert next_disbursement.has_processed_delayed_orders is True
-    assert [d for d in snapshot()["disbursements"] if d["id"] == next_disbursement.id] == next_disbursement_before
-    assert [p for p in snapshot()["packages"] if p["id"] == next_package.id] == next_package_before
+    assert [disbursement for disbursement in snapshot()["disbursements"] if disbursement["id"] == next_disbursement.id] == next_disbursement_before
+    assert [package for package in snapshot()["packages"] if package["id"] == next_package.id] == next_package_before
 
 
-# --- caso 6 y 6 bis: falla de infraestructura, con reintento automático ---
+# --- cases 6 and 6 bis: infrastructure failure, with automatic retry ---
 
 @pytest.fixture
 def packages_with_an_infrastructure_failure(settings, daily_merchant, orders_for_all_merchants):
     settings.PACKAGE_MAX_RETRIES = 1
-    # Con 2 orders por paquete queda un paquete por merchant.
+    # With 2 orders per package there is one package per merchant.
     settings.PACKAGE_MAX_ORDERS = 2
     packages = create_payment_day(PAYMENT_DATE)
     failing = disbursement_of(daily_merchant).package
     for package in packages:
         if package.id == failing.id:
-            # Se cae la DB al guardar los resultados del paquete de padberg_group.
+            # The DB goes down while saving the results of padberg_group's package.
             with mock.patch(f"{SERVICE}.save_disbursement_results", side_effect=OperationalError("connection lost")):
                 process_disbursement_package(package.id)
         else:
@@ -376,10 +376,10 @@ def packages_with_an_infrastructure_failure(settings, daily_merchant, orders_for
 def test_infrastructure_failure_fails_only_its_package_and_can_be_retried(
     daily_merchant, other_daily_merchant, weekly_merchant, packages_with_an_infrastructure_failure
 ):
-    """Caso 6: merchants daily y weekly con orders; algunos paquetes se procesan OK y otro falla por
-    infraestructura, con posibilidad de reintentar.
+    """Case 6: daily and weekly merchants with orders; some packages are processed OK and another one
+    fails because of infrastructure, with a possible retry.
 
-    Se valida cómo quedan disbursements y paquetes, y que el control lo marca para reintentar.
+    It checks how disbursements and packages end up, and that the check marks it to be retried.
     """
     failing = packages_with_an_infrastructure_failure
 
@@ -406,13 +406,13 @@ def test_infrastructure_failure_fails_only_its_package_and_can_be_retried(
 
 
 def test_infrastructure_failure_is_completed_by_the_automatic_retry(daily_merchant, packages_with_an_infrastructure_failure):
-    """Caso 6 bis: lo mismo que el caso 6, y después el reintento automático vuelve a correr el proceso.
+    """Case 6 bis: the same as case 6, and then the automatic retry runs the process again.
 
-    El proceso termina OK y los paquetes que ya estaban COMPLETED no se vuelven a procesar.
+    The process ends OK and the packages already COMPLETED are not processed again.
     """
     failing = packages_with_an_infrastructure_failure
-    others_before = [p for p in snapshot()["packages"] if p["id"] != failing.id]
-    # Lo que hace la task de control: pide los paquetes a reintentar y los procesa.
+    others_before = [package for package in snapshot()["packages"] if package["id"] != failing.id]
+    # What the check task does: asks for the packages to retry and processes them.
     result = check_disbursement_packages(PAYMENT_DATE, is_last_run=False)
 
     for package_id in result.to_retry:
@@ -427,26 +427,26 @@ def test_infrastructure_failure_is_completed_by_the_automatic_retry(daily_mercha
     assert padberg.is_retryable is None
     assert amounts(padberg) == (Decimal("533.21"), Decimal("4.63"), Decimal("528.58"))
     assert not Disbursement.objects.exclude(status=COMPLETED).exists()
-    # Los otros paquetes no se vuelven a procesar.
-    others_after = [p for p in snapshot()["packages"] if p["id"] != failing.id]
+    # The other packages are not processed again.
+    others_after = [package for package in snapshot()["packages"] if package["id"] != failing.id]
     assert others_after == others_before
 
 
-# --- caso 7: monthly fees con disbursements en distintos estados ---
+# --- case 7: monthly fees with disbursements in different statuses ---
 
 def test_monthly_fees_count_every_order_of_the_month_whatever_the_state_of_its_disbursement():
-    """Caso 7: disbursements sin procesar, procesados con error y procesados OK, y merchants sin
-    disbursements. Se calculan las monthly fees de enero 2023, minimum 29.00 salvo que se indique otro.
+    """Case 7: disbursements not processed, processed with an error and processed OK, and merchants
+    without disbursements. The monthly fees of January 2023 are calculated, minimum 29.00 unless stated.
 
-    - processed_ok: order de 10.00 de comisión con disbursement COMPLETED → fee 19.00.
-    - processed_with_error: 5.00 con disbursement FAILED → fee 24.00.
-    - not_processed: 4.00 con disbursement PENDING (se paga el 1/2) → fee 25.00.
-    - not_disbursed: 3.00 sin disbursement todavía → fee 26.00.
-    - without_orders: live y sin orders → paga el minimum entero, 29.00.
-    - over_minimum: 30.00 de comisiones → no se le cobra.
-    - without_minimum: minimum 0 → no se le cobra.
-    - not_live_yet: live_on 1/2 → enero no se le cobra.
-    La fee queda guardada en MonthlyFee y no se descuenta de ningún disbursement ni order.
+    - processed_ok: order with 10.00 of commission and a COMPLETED disbursement → fee 19.00.
+    - processed_with_error: 5.00 with a FAILED disbursement → fee 24.00.
+    - not_processed: 4.00 with a PENDING disbursement (paid on 2/1) → fee 25.00.
+    - not_disbursed: 3.00 without a disbursement yet → fee 26.00.
+    - without_orders: live and without orders → pays the whole minimum, 29.00.
+    - over_minimum: 30.00 in commissions → not charged.
+    - without_minimum: minimum 0 → not charged.
+    - not_live_yet: live_on 2/1 → not charged for January.
+    The fee is saved in MonthlyFee and is not deducted from any disbursement or order.
     """
     january = date(2023, 1, 1)
     live_on = date(2022, 6, 1)
@@ -462,7 +462,7 @@ def test_monthly_fees_count_every_order_of_the_month_whatever_the_state_of_its_d
     order = OrderFactory(merchant=processed_with_error, order_creation_date=date(2023, 1, 10), amount="588.24", commission_fee="5.00")
     DisbursementFactory(
         merchant=processed_with_error, payment_date=date(2023, 1, 11), orders=[order], status=FAILED,
-        error="Se esperaban 2 orders y hay 1.",
+        error="Expected 2 orders and found 1.",
     )
 
     not_processed = MerchantFactory(reference="not_processed", live_on=live_on, minimum_monthly_fee="29.00")
@@ -501,5 +501,5 @@ def test_monthly_fees_count_every_order_of_the_month_whatever_the_state_of_its_d
         assert fee.amount == Decimal(amount), merchant.reference
     for merchant in (over_minimum, without_minimum, not_live_yet):
         assert not MonthlyFee.objects.filter(merchant=merchant).exists(), merchant.reference
-    # No se descuenta de nada: disbursements, paquetes y orders quedan iguales.
+    # Nothing is deducted: disbursements, packages and orders stay the same.
     assert snapshot() == before

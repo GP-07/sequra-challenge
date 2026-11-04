@@ -1,4 +1,4 @@
-"""Cómo se enganchan las tasks de paquetes. La lógica de negocio se prueba en los servicios."""
+"""How the package tasks are wired. The business logic is tested in the services."""
 
 from datetime import date, datetime, timezone
 from unittest import mock

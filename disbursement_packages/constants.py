@@ -1,7 +1,7 @@
 from django.db import OperationalError
 
-# Errores en los que reintentar puede servir (infraestructura). Cualquier otro error no es retryable.
+# Errors where retrying may help (infrastructure). Any other error is not retryable.
 RETRYABLE_ERRORS = (OperationalError, TimeoutError)
 
-# Error que queda en los disbursements de un paquete liberado por estar trabado en PROCESSING.
+# Error left on the disbursements of a package released because it was stuck in PROCESSING.
 STUCK_PACKAGE_ERROR = "Processing interrupted: the package was stuck in PROCESSING and was released."

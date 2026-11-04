@@ -1,4 +1,4 @@
-"""Lectura de los CSV de importación y parseo de los campos comunes."""
+"""Reading of the imported CSV files and parsing of the common fields."""
 
 import csv
 import uuid
@@ -13,7 +13,7 @@ from core.exceptions import InvalidFile, InvalidRow
 
 
 def read_rows(path: Path, columns: set):
-    """(número de línea, fila) de cada fila del CSV. La línea 1 es el encabezado."""
+    """(line number, row) for each row of the CSV. Line 1 is the header."""
     with path.open(newline="", encoding="utf-8") as file:
         reader = csv.DictReader(file, delimiter=CSV_DELIMITER)
         missing = columns - set(reader.fieldnames or [])

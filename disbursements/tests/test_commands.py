@@ -1,4 +1,4 @@
-"""Comandos manuales de disbursements: backfill y reintento manual por id de disbursement."""
+"""Manual disbursement commands: backfill and manual retry by disbursement id."""
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -22,7 +22,7 @@ from orders.tests.factories import OrderFactory
 
 pytestmark = pytest.mark.django_db
 
-# CSVs de prueba, con el mismo formato que los del challenge.
+# Test CSV files, with the same format as the challenge ones.
 MERCHANTS_DATA_DIR = settings.BASE_DIR / "merchants" / "tests" / "data"
 ORDERS_DATA_DIR = settings.BASE_DIR / "orders" / "tests" / "data"
 COMMAND = "disbursements.management.commands.create_disbursements_for_range"
@@ -47,7 +47,7 @@ def loaded(merchants_csv, orders_csv):
 
 
 def test_backfill_creates_packages_and_processes_them(loaded):
-    # deckow_gibson es WEEKLY desde un miércoles: su primer pago es el 8/2.
+    # deckow_gibson is WEEKLY since a Wednesday: its first payment is on 2/8.
     output = run_command("create_disbursements_for_range", "--from", "2023-02-01", "--to", "2023-02-08")
 
     assert set(Disbursement.objects.values_list("reference", flat=True)) == {
@@ -56,9 +56,9 @@ def test_backfill_creates_packages_and_processes_them(loaded):
     }
     assert not Order.objects.filter(disbursement__isnull=True).exists()
     assert DisbursementPackage.objects.exists()
-    # En los tests huey corre en modo immediate: los process ya terminaron.
+    # In the tests huey runs in immediate mode: the processing has already finished.
     assert not Disbursement.objects.exclude(status=Disbursement.Status.COMPLETED).exists()
-    # El comando termina al encolar los paquetes e informa qué armó.
+    # The command ends when the packages are enqueued and reports what it built.
     assert "Disbursements created: 2" in output
     assert "Packages enqueued: 1" in output
     package = DisbursementPackage.objects.get(disbursements__reference="padberg_group_for_20230201")
@@ -84,7 +84,7 @@ def test_backfill_run_twice_creates_and_enqueues_nothing_new(loaded):
         ("2023-02-08", "2023-02-01", "is after --to"),
         ("2023-02-01", "2023-02-31", "Invalid date"),
         ("01/02/2023", "2023-02-08", "Invalid date"),
-        # Hoy (fijado en el test) es 2023-02-08: el 9 todavía no cerró.
+        # Today (fixed in the test) is 2023-02-08: the 9th has not closed yet.
         ("2023-02-01", "2023-02-09", "is after today"),
     ),
 )
@@ -101,7 +101,7 @@ def test_backfill_stops_at_the_day_that_fails_and_keeps_the_previous_days():
     for day in (1, 2, 3):
         OrderFactory(merchant=merchant, order_creation_date=date(2023, 2, day))
 
-    # Se crea de verdad el 2/2 (DAILY y WEEKLY) y falla la tercera llamada: el 2/3 DAILY.
+    # 2/2 is really created (DAILY and WEEKLY) and the third call fails: 2/3 DAILY.
     with mock.patch.object(
         disbursement_creation,
         "create_disbursements_in_bulk",
@@ -114,7 +114,7 @@ def test_backfill_stops_at_the_day_that_fails_and_keeps_the_previous_days():
     assert "payment date 2023-02-03 failed" in str(error.value)
     assert "connection lost" in str(error.value)
     assert "Disbursements created before it: 1" in str(error.value)
-    # El 2/2 quedó creado y sin paquete: el comando no arma paquetes si falla la creación.
+    # 2/2 stays created and without a package: the command builds no packages if creation fails.
     assert list(Disbursement.objects.values_list("payment_date", "package_id")) == [(date(2023, 2, 2), None)]
     assert not DisbursementPackage.objects.exists()
 
@@ -155,7 +155,7 @@ def test_backfill_reports_unfinished_packages_of_previous_runs_without_enqueuing
 # --- retry disbursements ---
 
 def test_retry_disbursements_reprocesses_by_id_and_reports_what_was_skipped():
-    # padberg_group falló por un dato que ya se corrigió; deckow_gibson ya estaba COMPLETED.
+    # padberg_group failed because of data that is already fixed; deckow_gibson was already COMPLETED.
     padberg = MerchantFactory(reference="padberg_group")
     failed = DisbursementFactory(
         merchant=padberg,

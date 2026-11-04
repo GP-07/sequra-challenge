@@ -3,7 +3,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def huey_immediate():
-    """Las tasks de huey corren en el mismo proceso, sin Redis."""
+    """The huey tasks run in the same process, without Redis."""
     from huey.contrib.djhuey import HUEY
 
     previous = HUEY.immediate

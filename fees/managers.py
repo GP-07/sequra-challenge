@@ -1,4 +1,4 @@
-"""Consultas sobre monthly fees que usan otras apps, con nombres de negocio."""
+"""Queries on monthly fees used by other apps, with business names."""
 
 from django.db import models
 from django.db.models import Count, Sum
@@ -9,9 +9,9 @@ from fees.data_classes import MonthlyFeesTotals
 
 class MonthlyFeeQuerySet(models.QuerySet):
     def totals_by_year(self) -> dict[int, MonthlyFeesTotals]:
-        """Una sola query: cantidad y monto de las monthly fees por año del mes que cubren.
+        """A single query: count and amount of the monthly fees by the year of the month they cover.
 
-        La de diciembre se calcula en enero, pero cuenta en el año de diciembre.
+        December's fee is calculated in January, but it counts in December's year.
         """
         rows = (
             self.order_by()

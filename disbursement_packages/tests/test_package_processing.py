@@ -1,8 +1,8 @@
-"""process_disbursement_package: toma atómica del paquete y resultado por disbursement.
+"""process_disbursement_package: atomic take of the package and a result per disbursement.
 
-- Falla de datos (un disbursement inválido): los demás quedan COMPLETED con sus totales.
-- Falla de infraestructura o inesperada: se revierte todo y no queda nada a medias.
-- Reprocesar solo toca lo que no está COMPLETED.
+- Data failure (an invalid disbursement): the others become COMPLETED with their totals.
+- Infrastructure or unexpected failure: everything is rolled back and nothing is left half done.
+- Reprocessing only touches what is not COMPLETED.
 """
 
 from datetime import date
@@ -53,15 +53,15 @@ def test_calculates_totals_and_completes_package_and_disbursements(package):
     package.refresh_from_db()
     assert package.status == Status.COMPLETED
     assert package.attempts == 1
-    a = Disbursement.objects.get(merchant__reference="a_merchant")
-    assert a.status == Disbursement.Status.COMPLETED
-    assert a.gross_amount == Decimal("533.21")
-    assert a.commission_fee_amount == Decimal("4.63")
-    # Las comisiones se restan del bruto.
-    assert a.disbursed_amount == Decimal("528.58")
-    b = Disbursement.objects.get(merchant__reference="b_merchant")
-    assert b.status == Disbursement.Status.COMPLETED
-    assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (
+    disbursement_a = Disbursement.objects.get(merchant__reference="a_merchant")
+    assert disbursement_a.status == Disbursement.Status.COMPLETED
+    assert disbursement_a.gross_amount == Decimal("533.21")
+    assert disbursement_a.commission_fee_amount == Decimal("4.63")
+    # Commissions are subtracted from the gross amount.
+    assert disbursement_a.disbursed_amount == Decimal("528.58")
+    disbursement_b = Disbursement.objects.get(merchant__reference="b_merchant")
+    assert disbursement_b.status == Disbursement.Status.COMPLETED
+    assert (disbursement_b.gross_amount, disbursement_b.commission_fee_amount, disbursement_b.disbursed_amount) == (
         Decimal("10.50"),
         Decimal("0.11"),
         Decimal("10.39"),
@@ -79,7 +79,7 @@ def test_package_that_cannot_be_taken_is_left_alone(package, status):
     package.refresh_from_db()
     assert package.status == status
     assert package.attempts == 0
-    # No toca los disbursements: quedan como estaban, tengan o no totales.
+    # It does not touch the disbursements: they stay as they were, with or without totals.
     assert disbursements_snapshot(package) == disbursements_before
 
 
@@ -105,7 +105,7 @@ def test_failed_package_can_be_processed_again(package):
     assert package.status == Status.COMPLETED
     assert package.attempts == 2
     assert not Disbursement.objects.exclude(status=Disbursement.Status.COMPLETED).exists()
-    # Al completarse se limpia el error de la corrida anterior.
+    # When completed, the error of the previous run is cleared.
     assert list(Disbursement.objects.values_list("error", "is_retryable").distinct()) == [("", None)]
 
 
@@ -115,12 +115,12 @@ def test_failed_package_can_be_processed_again(package):
         # Infraestructura: reintentar puede servir.
         (OperationalError("deadlock detected"), True),
         (TimeoutError("timeout"), True),
-        # Inesperado (un bug): reintentar no sirve.
+        # Unexpected (a bug): retrying does not help.
         (ValueError("invalid data"), False),
     ],
 )
 def test_unexpected_error_rolls_back_and_fails_package_and_disbursements(package, error, retryable):
-    # Falla al guardar: confiamos en transaction.atomic para que no quede nada escrito.
+    # Fails while saving: we rely on transaction.atomic so nothing is left written.
     with mock.patch(f"{SERVICE}.save_disbursement_results", side_effect=error):
         process_disbursement_package(package.id)
 
@@ -137,9 +137,9 @@ def test_unexpected_error_rolls_back_and_fails_package_and_disbursements(package
 @pytest.mark.parametrize(
     "amount, commission_fee, reason",
     [
-        # Un dato corregido a mano que dejó la order con monto negativo.
+        # Data fixed by hand that left the order with a negative amount.
         ("-10.50", "0.11", "Negative amounts"),
-        # Comisiones mayores al bruto: se pagaría un monto negativo.
+        # Commissions greater than the gross amount: a negative amount would be paid.
         ("10.50", "20.00", "greater than the gross amount"),
     ],
 )
@@ -148,30 +148,30 @@ def test_disbursement_with_invalid_amounts_fails_and_does_not_undo_the_others(pa
 
     process_disbursement_package(package.id)
 
-    a = Disbursement.objects.get(merchant__reference="a_merchant")
-    assert a.status == Disbursement.Status.COMPLETED
-    assert (a.gross_amount, a.commission_fee_amount, a.disbursed_amount) == (
+    disbursement_a = Disbursement.objects.get(merchant__reference="a_merchant")
+    assert disbursement_a.status == Disbursement.Status.COMPLETED
+    assert (disbursement_a.gross_amount, disbursement_a.commission_fee_amount, disbursement_a.disbursed_amount) == (
         Decimal("533.21"),
         Decimal("4.63"),
         Decimal("528.58"),
     )
-    assert a.error == ""
-    b = Disbursement.objects.get(merchant__reference="b_merchant")
-    assert b.status == Disbursement.Status.FAILED
-    assert reason in b.error
-    # Reintentar no sirve hasta que alguien corrija los datos.
-    assert b.is_retryable is False
-    assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (None, None, None)
+    assert disbursement_a.error == ""
+    disbursement_b = Disbursement.objects.get(merchant__reference="b_merchant")
+    assert disbursement_b.status == Disbursement.Status.FAILED
+    assert reason in disbursement_b.error
+    # Retrying does not help until someone fixes the data.
+    assert disbursement_b.is_retryable is False
+    assert (disbursement_b.gross_amount, disbursement_b.commission_fee_amount, disbursement_b.disbursed_amount) == (None, None, None)
     package.refresh_from_db()
     assert package.status == Status.FAILED
 
 
 def test_reprocessing_only_touches_what_is_not_completed(package):
-    # Comisión mayor al bruto: b falla por datos.
+    # Commission greater than the gross amount: disbursement_b fails because of data.
     Order.objects.filter(merchant__reference="b_merchant").update(commission_fee="20.00")
     process_disbursement_package(package.id)
     a_before = disbursements_snapshot(package)[0]
-    # Alguien corrige el dato y manda a reprocesar.
+    # Someone fixes the data and sends it to reprocess.
     Order.objects.filter(merchant__reference="b_merchant").update(commission_fee="0.11")
 
     processed = process_disbursement_package(package.id)
@@ -180,13 +180,13 @@ def test_reprocessing_only_touches_what_is_not_completed(package):
     package.refresh_from_db()
     assert package.status == Status.COMPLETED
     assert package.attempts == 2
-    # a no se vuelve a tocar.
+    # disbursement_a is not touched again.
     assert disbursements_snapshot(package)[0] == a_before
-    # b da lo mismo que si se hubiera procesado bien de entrada.
-    b = Disbursement.objects.get(merchant__reference="b_merchant")
-    assert b.status == Disbursement.Status.COMPLETED
-    assert b.error == ""
-    assert (b.gross_amount, b.commission_fee_amount, b.disbursed_amount) == (
+    # disbursement_b gives the same as if it had been processed fine from the start.
+    disbursement_b = Disbursement.objects.get(merchant__reference="b_merchant")
+    assert disbursement_b.status == Disbursement.Status.COMPLETED
+    assert disbursement_b.error == ""
+    assert (disbursement_b.gross_amount, disbursement_b.commission_fee_amount, disbursement_b.disbursed_amount) == (
         Decimal("10.50"),
         Decimal("0.11"),
         Decimal("10.39"),
@@ -199,7 +199,7 @@ def sleep_in_db(*args):
 
 
 def test_query_slower_than_the_statement_timeout_fails_the_package_as_retryable(package, settings):
-    # Una query colgada: Postgres la corta al pasar PACKAGE_STATEMENT_TIMEOUT_SECONDS.
+    # A hung query: Postgres cuts it after PACKAGE_STATEMENT_TIMEOUT_SECONDS.
     settings.PACKAGE_STATEMENT_TIMEOUT_SECONDS = 1
     with mock.patch(f"{SERVICE}.aggregate_package_totals", side_effect=sleep_in_db):
         process_disbursement_package(package.id)

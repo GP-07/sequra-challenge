@@ -1,4 +1,4 @@
-"""Comisión de seQura por order: tramos del enunciado, redondeo half-up a 2 decimales."""
+"""seQura's commission per order: tiers from the statement, half-up rounding to 2 decimals."""
 
 from decimal import Decimal
 
@@ -10,7 +10,7 @@ from orders.services.commissions import calculate_commission_fee
 @pytest.mark.parametrize(
     "amount, expected",
     [
-        # Menos de 50 €: 1,00%.
+        # Less than 50 €: 1.00%.
         ("10.00", "0.10"),
         ("49.99", "0.50"),
         # Assumption: 50 € exactos pagan 0,95%.
@@ -29,7 +29,7 @@ def test_commission_by_tier(amount, expected):
 
 
 def test_rounds_half_up_not_half_even():
-    # 10,50 × 1% = 0,105. Half-up da 0,11; el redondeo bancario daría 0,10.
+    # 10.50 × 1% = 0.105. Half-up gives 0.11; banker's rounding would give 0.10.
     fee = calculate_commission_fee(Decimal("10.50"))
 
     assert fee == Decimal("0.11")

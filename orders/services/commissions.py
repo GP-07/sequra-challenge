@@ -5,7 +5,7 @@ from orders.constants import COMMISSION_TIERS
 
 
 def calculate_commission_fee(amount: Decimal) -> Decimal:
-    """Comisión de seQura según el tramo del monto, redondeada half-up a 2 decimales."""
+    """seQura's commission according to the amount tier, rounded half-up to 2 decimals."""
     if amount < 0:
         raise ValueError(f"Negative amount: {amount}")
     for minimum, rate in COMMISSION_TIERS:

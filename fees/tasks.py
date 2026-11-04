@@ -1,4 +1,4 @@
-"""Task mensual de monthly fees: el día 1 a las 00:30 UTC calcula las del mes anterior."""
+"""Monthly task for monthly fees: on day 1 at 00:30 UTC it calculates the previous month."""
 
 from datetime import timedelta
 

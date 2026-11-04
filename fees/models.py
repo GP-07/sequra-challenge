@@ -6,7 +6,7 @@ from fees.managers import MonthlyFeeQuerySet
 
 class MonthlyFee(models.Model):
     merchant = models.ForeignKey("merchants.Merchant", on_delete=models.PROTECT, related_name="monthly_fees")
-    # Primer día del mes que cubre la fee.
+    # First day of the month the fee covers.
     month = models.DateField()
     commissions_amount = models.DecimalField(**MONEY)
     minimum_monthly_fee = models.DecimalField(**MONEY)

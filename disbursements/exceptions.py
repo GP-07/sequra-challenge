@@ -1,5 +1,5 @@
 class DayCreationFailed(Exception):
-    """Falló la creación de un día del backfill. Los días anteriores ya quedaron guardados."""
+    """The creation of a day of the backfill failed. The previous days are already saved."""
 
     def __init__(self, payment_date, frequency, created_before):
         self.payment_date = payment_date

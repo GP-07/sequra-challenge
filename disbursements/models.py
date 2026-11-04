@@ -20,11 +20,11 @@ class Disbursement(models.Model):
         "disbursement_packages.DisbursementPackage", null=True, blank=True, on_delete=models.PROTECT, related_name="disbursements"
     )
     has_processed_delayed_orders = models.BooleanField(default=False)
-    # Motivo por el que falló al procesar su paquete.
+    # Reason it failed while processing its package.
     error = models.TextField(blank=True)
-    # Si falló: True si reintentarlo puede servir (error de infraestructura), False si no (datos o bug).
+    # If it failed: True if retrying it may help (infrastructure error), False if not (data or bug).
     is_retryable = models.BooleanField(null=True)
-    # Se completan al procesar el paquete.
+    # Filled in when the package is processed.
     gross_amount = models.DecimalField(null=True, blank=True, **MONEY)
     commission_fee_amount = models.DecimalField(null=True, blank=True, **MONEY)
     disbursed_amount = models.DecimalField(null=True, blank=True, **MONEY)

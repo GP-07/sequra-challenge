@@ -9,7 +9,7 @@ class Merchant(models.Model):
         DAILY = "DAILY"
         WEEKLY = "WEEKLY"
 
-    # id del CSV: se usa para buscar. La PK es el id autoincremental de la DB, que es el que se usa para ordenar y en las FKs.
+    # CSV id: used for lookups. The PK is the DB autoincrement id, which is the one used for ordering and in FKs.
     external_id = models.UUIDField(unique=True)
     reference = models.CharField(max_length=255, unique=True)
     email = models.EmailField()

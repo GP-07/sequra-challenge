@@ -1,4 +1,4 @@
-"""calculate_monthly_fees_for_range: backfill de monthly fees para un rango de meses."""
+"""calculate_monthly_fees_for_range: backfill of monthly fees for a range of months."""
 
 from datetime import date
 from decimal import Decimal
@@ -15,7 +15,7 @@ pytestmark = pytest.mark.django_db
 
 
 def test_calculates_the_monthly_fees_of_the_range():
-    # padberg_group tiene minimum 0: no se le cobra.
+    # padberg_group has minimum 0: it is not charged.
     padberg = MerchantFactory(reference="padberg_group", live_on=date(2023, 2, 1), minimum_monthly_fee="0.00")
     deckow = MerchantFactory(reference="deckow_gibson", live_on=date(2023, 2, 1), minimum_monthly_fee="29.00")
     OrderFactory(merchant=padberg, order_creation_date=date(2023, 2, 1), commission_fee="0.97")
@@ -36,7 +36,7 @@ def test_calculates_the_monthly_fees_of_the_range():
     [
         ("2023-13", "2023-02"),
         ("2023-02", "febrero"),
-        # El rango está al revés.
+        # The range is reversed.
         ("2023-03", "2023-02"),
     ],
 )

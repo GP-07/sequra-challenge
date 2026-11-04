@@ -12,12 +12,12 @@ from merchants.models import Merchant
 
 
 def import_merchants(path: Path) -> ImportResult:
-    """Carga los merchants nuevos del CSV. Los que ya existen (por el id del CSV, external_id) no se tocan.
+    """Loads the new merchants of the CSV. The existing ones (by CSV id, external_id) are not touched.
 
-    Las filas inválidas se saltean y se informan con su número de línea; no frenan la carga del resto.
+    Invalid rows are skipped and reported with their line number; they do not stop loading the rest.
     """
     result = ImportResult()
-    parsed = {}  # external_id → (número de línea, merchant)
+    parsed = {}  # external_id → (line number, merchant)
     references = set()
     for line_number, row in read_rows(path, MERCHANT_CSV_COLUMNS):
         try:
@@ -30,7 +30,7 @@ def import_merchants(path: Path) -> ImportResult:
         parsed[merchant.external_id] = (line_number, merchant)
         references.add(merchant.reference)
 
-    # Dos queries para todo el archivo, no una por fila.
+    # Two queries for the whole file, not one per row.
     existing_ids = set(Merchant.objects.filter(external_id__in=parsed).values_list("external_id", flat=True))
     used_references = set(Merchant.objects.filter(reference__in=references).values_list("reference", flat=True))
     new_merchants = []
@@ -67,7 +67,7 @@ def parse_frequency(value):
 
 
 def parse_minimum_monthly_fee(value):
-    """Vacío se carga como 0; negativo es inválido."""
+    """Empty is loaded as 0; negative is invalid."""
     value = (value or "").strip()
     if not value:
         return Decimal("0.00")

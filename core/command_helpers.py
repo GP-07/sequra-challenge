@@ -1,4 +1,4 @@
-"""Lo que comparten load_merchants y load_orders: ubicar el archivo e informar el resultado."""
+"""What load_merchants and load_orders share: locating the file and reporting the result."""
 
 from pathlib import Path
 
@@ -7,7 +7,7 @@ from django.core.management import CommandError
 
 
 def import_file_path(file_name: str) -> Path:
-    """El archivo tiene que estar en IMPORT_DIR (en Docker, la carpeta montada)."""
+    """The file must be in IMPORT_DIR (in Docker, the mounted folder)."""
     import_dir = Path(settings.IMPORT_DIR)
     if Path(file_name).name != file_name:
         raise CommandError(f"Pass only the file name; the file is read from {import_dir}.")

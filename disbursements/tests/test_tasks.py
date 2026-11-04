@@ -1,4 +1,4 @@
-"""Cómo se engancha la task diaria de creación. La lógica de negocio se prueba en los servicios."""
+"""How the daily creation task is wired. The business logic is tested in the services."""
 
 import logging
 from datetime import date, datetime, timezone
@@ -30,9 +30,9 @@ def test_creates_daily_and_weekly_disbursements_and_then_enqueues_the_packaging(
 @pytest.mark.parametrize(
     ("retries_left", "alerted"),
     (
-        # Huey todavía la va a reintentar: no se alerta.
+        # Huey will still retry it: no alert.
         (1, False),
-        # Último intento: alerta CRITICAL.
+        # Last attempt: CRITICAL alert.
         (0, True),
     ),
 )
@@ -44,5 +44,5 @@ def test_failed_creation_does_not_enqueue_the_packaging(caplog, retries_left, al
             tasks.create_disbursements_task.call_local(task=mock.Mock(retries=retries_left))
 
     package.assert_not_called()
-    critical = [r.getMessage() for r in caplog.records if r.levelno == logging.CRITICAL]
+    critical = [record.getMessage() for record in caplog.records if record.levelno == logging.CRITICAL]
     assert critical == (["Disbursements of 2023-02-08 could not be created: connection lost"] if alerted else [])

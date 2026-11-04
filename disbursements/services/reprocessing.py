@@ -1,4 +1,4 @@
-"""Reprocess manual de disbursements por id, sin volver a correr el día ni el paquete entero."""
+"""Manual reprocess of disbursements by id, without running the day or the whole package again."""
 
 from collections import defaultdict
 
@@ -8,11 +8,11 @@ from disbursements.models import Disbursement
 
 
 def reprocess_disbursements(disbursement_ids: list[int]) -> ReprocessResult:
-    """Agrupa los ids por paquete y procesa cada paquete solo con esos disbursements.
+    """Groups the ids by package and processes each package with only those disbursements.
 
-    Usa process_disbursement_package(package_id, disbursement_ids): misma toma atómica, misma
-    transacción y misma validación que el proceso normal. Se saltean e informan los COMPLETED, los que
-    todavía no tienen paquete y los de un paquete que está procesando otro worker.
+    Uses process_disbursement_package(package_id, disbursement_ids): same atomic take, same
+    transaction and same validation as the normal process. The COMPLETED ones, the ones without a
+    package yet and the ones of a package another worker is processing are skipped and reported.
     """
     result = ReprocessResult()
     found = {

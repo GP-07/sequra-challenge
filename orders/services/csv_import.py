@@ -12,17 +12,17 @@ from orders.services.commissions import calculate_commission_fee
 
 
 def import_orders(path: Path, batch_size: int = ORDER_IMPORT_BATCH_SIZE) -> ImportResult:
-    """Carga las orders nuevas del CSV, con su commission_fee. Las que ya existen (por el id del CSV, external_id) no se tocan.
+    """Loads the new orders of the CSV, with their commission_fee. The existing ones (by CSV id, external_id) are not touched.
 
-    Procesa por lotes para no tener el archivo entero en memoria: por lote, una query para ver qué
-    ids ya existen y un bulk_create con los nuevos. Cada lote se guarda por separado; si la carga se
-    corta, se vuelve a correr y saltea lo que ya entró.
+    It works in batches so as not to keep the whole file in memory: per batch, one query to see which
+    ids already exist and one bulk_create with the new ones. Each batch is saved on its own; if the
+    load is interrupted, running it again skips what was already loaded.
 
-    Las filas inválidas se saltean y se informan con su número de línea. Un id repetido dentro del
-    mismo lote es inválido; si se repite en otro lote, cuenta como ya cargado.
+    Invalid rows are skipped and reported with their line number. An id repeated within the same
+    batch is invalid; if it is repeated in another batch, it counts as already loaded.
     """
     result = ImportResult()
-    # 50 merchants: se cargan una vez en memoria en lugar de una query por fila.
+    # 50 merchants: loaded once in memory instead of one query per row.
     merchant_ids = dict(Merchant.objects.values_list("reference", "id"))
     batch = {}
     for line_number, row in read_rows(path, ORDER_CSV_COLUMNS):
@@ -73,7 +73,7 @@ def parse_order_id(value):
 
 
 def parse_amount(value):
-    """Monto no negativo con hasta 2 decimales; no se redondea un monto que viene con más."""
+    """Non-negative amount with up to 2 decimals; an amount that comes with more is not rounded."""
     value = parse_required(value, "amount")
     try:
         amount = Decimal(value)

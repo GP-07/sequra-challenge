@@ -1,24 +1,24 @@
-"""Consultas sobre merchants que usan otras apps, con nombres de negocio."""
+"""Queries on merchants used by other apps, with business names."""
 
 from django.db import models
 
 
 class MerchantQuerySet(models.QuerySet):
     def to_disburse_on(self, payment_date, frequency):
-        """Merchants de esa frecuencia a los que les toca cobrar en payment_date (ya live antes de ese día).
+        """Merchants of that frequency that are due to be paid on payment_date (already live before that day).
 
-        - DAILY: todos los días.
-        - WEEKLY: solo el día de la semana de su live_on.
+        - DAILY: every day.
+        - WEEKLY: only on the weekday of their live_on.
         """
         queryset = self.filter(disbursement_frequency=frequency, live_on__lt=payment_date)
         if frequency == self.model.Frequency.WEEKLY:
-            # week_day de Django: 1 = domingo ... 7 = sábado.
+            # Django's week_day: 1 = Sunday ... 7 = Saturday.
             queryset = queryset.filter(live_on__week_day=payment_date.isoweekday() % 7 + 1)
         return queryset
 
     def subject_to_monthly_fee(self, month_end):
-        """Live a más tardar el último día del mes y con minimum_monthly_fee mayor a 0.
+        """Live on the last day of the month at the latest, and with a minimum_monthly_fee greater than 0.
 
-        Un merchant que pasa a estar live a mitad de mes paga el mes completo (no se prorratea).
+        A merchant that goes live in the middle of the month pays the whole month (it is not prorated).
         """
         return self.filter(live_on__lte=month_end, minimum_monthly_fee__gt=0)

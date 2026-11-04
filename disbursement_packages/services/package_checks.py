@@ -1,15 +1,15 @@
-"""Control de los paquetes de un día de pago: corre en varios horarios y decide qué reintentar.
+"""Check of the packages of a payment day: runs at several hours and decides what to retry.
 
-Primero libera los paquetes del día trabados en PROCESSING (release_stuck_packages): quedan FAILED
-retryable y entran en el mismo control, así se reintentan en esta corrida, o alertan si es la última.
+First it releases the day's packages stuck in PROCESSING (release_stuck_packages): they become FAILED
+retryable and go through the same check, so they are retried in this run, or alert if it is the last.
 
-Después mira los disbursements FAILED con esa fecha de pago, agrupados por paquete:
-- FAILED no retryable: alerta ERROR, no se reintenta (hay que corregir datos o código).
-- FAILED retryable en el último horario o sin reintentos disponibles: alerta CRITICAL, no se reintenta.
-- FAILED retryable: se reintenta su paquete.
+Then it looks at the FAILED disbursements with that payment date, grouped by package:
+- FAILED not retryable: ERROR alert, not retried (data or code has to be fixed).
+- FAILED retryable on the last run or without retries left: CRITICAL alert, not retried.
+- FAILED retryable: its package is retried.
 
-Los paquetes PENDING y los PROCESSING que un worker está procesando (o desde hace menos de
-PACKAGE_STUCK_AFTER_MINUTES) no se tocan.
+PENDING packages, and PROCESSING ones that a worker is processing (or for less than
+PACKAGE_STUCK_AFTER_MINUTES), are not touched.
 """
 
 import logging
@@ -34,7 +34,7 @@ def check_disbursement_packages(run_date: date, *, is_last_run: bool) -> CheckRe
     if not failures:
         return result
 
-    # Solo los paquetes que terminaron FAILED; los que están PROCESSING se están reintentando ahora.
+    # Only the packages that ended FAILED; the ones in PROCESSING are being retried right now.
     failed_packages = DisbursementPackage.objects.filter(
         id__in={package_id for package_id, _, _ in failures}, status=DisbursementPackage.Status.FAILED
     ).in_bulk()
@@ -75,7 +75,7 @@ def check_disbursement_packages(run_date: date, *, is_last_run: bool) -> CheckRe
 
 
 def release_stuck_packages_of_the_day(run_date: date) -> list[int]:
-    """Libera los paquetes PROCESSING del día cuyo worker ya no está. Devuelve los ids liberados."""
+    """Releases the day's PROCESSING packages whose worker is gone. Returns the released ids."""
     package_ids = Disbursement.objects.package_ids_for_payment_dates(run_date, run_date)
     processing = DisbursementPackage.objects.filter(id__in=package_ids, status=DisbursementPackage.Status.PROCESSING)
     processing_ids = sorted(processing.values_list("id", flat=True))
@@ -88,9 +88,9 @@ def release_stuck_packages_of_the_day(run_date: date) -> list[int]:
 
 
 def unfinished_packages_for_range(date_from: date, date_to: date, *, exclude_ids=()) -> list[int]:
-    """Ids de los paquetes PENDING o FAILED de los disbursements con fecha de pago en el rango.
+    """Ids of the PENDING or FAILED packages of the disbursements with a payment date in the range.
 
-    Lo usa el backfill para informar paquetes de una corrida anterior que no terminaron; no los re-encola.
+    Used by the backfill to report unfinished packages of a previous run; it does not re-enqueue them.
     """
     package_ids = Disbursement.objects.package_ids_for_payment_dates(date_from, date_to) - set(exclude_ids)
     unfinished = DisbursementPackage.objects.filter(

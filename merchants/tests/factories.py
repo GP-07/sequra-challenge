@@ -1,4 +1,4 @@
-"""Factories de factory_boy para crear datos de prueba."""
+"""factory_boy factories to create test data."""
 
 import uuid
 from datetime import date
@@ -15,7 +15,7 @@ class MerchantFactory(DjangoModelFactory):
         model = Merchant
 
     external_id = factory.LazyFunction(uuid.uuid4)
-    reference = factory.Sequence(lambda n: f"merchant_{n}")
+    reference = factory.Sequence(lambda number: f"merchant_{number}")
     email = factory.LazyAttribute(lambda merchant: f"info@{merchant.reference}.com")
     live_on = date(2023, 1, 1)
     disbursement_frequency = Merchant.Frequency.DAILY

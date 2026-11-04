@@ -2,10 +2,10 @@ from django.db import models
 
 
 class DisbursementPackage(models.Model):
-    """Agrupación lógica de disbursements para procesarlos juntos.
+    """Logical group of disbursements to process them together.
 
-    El resultado (COMPLETED/FAILED, error, si se puede reintentar) es de cada disbursement; el status
-    del paquete resume: COMPLETED si todos sus disbursements lo están, FAILED si alguno no.
+    The result (COMPLETED/FAILED, error, whether it can be retried) belongs to each disbursement; the
+    package status sums it up: COMPLETED if all its disbursements are, FAILED if any is not.
     """
 
     class Status(models.TextChoices):
@@ -16,7 +16,7 @@ class DisbursementPackage(models.Model):
 
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
     order_count = models.PositiveIntegerField(default=0)
-    # Cada vez que se toma para procesar (1 + reintentos): limita cuántas veces se reprocesa.
+    # Each time it is taken for processing (1 + retries): limits how many times it is reprocessed.
     attempts = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

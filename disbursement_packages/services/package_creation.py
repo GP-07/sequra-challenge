@@ -10,17 +10,17 @@ from disbursements.models import Disbursement
 
 
 def create_disbursement_packages(date_from: date, date_to: date | None = None, max_orders: int | None = None) -> PackagingResult:
-    """Arma paquetes con los disbursements PENDING sin paquete cuya fecha de pago está en el rango.
+    """Builds packages with the PENDING disbursements without a package whose payment date is in the range.
 
-    - Cada paquete tiene hasta max_orders orders (PACKAGE_MAX_ORDERS por defecto) y un disbursement
-      nunca se parte entre paquetes.
-    - Orden determinístico: fecha de pago e id (de la DB) del merchant, sin join a merchants. Los
-      mismos datos dan los mismos paquetes.
-    - Un disbursement con más de max_orders orders no entra en ningún paquete: queda
-      REQUIRES_ATTENTION y se alerta (CRITICAL) para procesarlo a mano.
+    - Each package has up to max_orders orders (PACKAGE_MAX_ORDERS by default) and a disbursement is
+      never split across packages.
+    - Deterministic order: payment date and the merchant's (DB) id, without a join to merchants. The
+      same data gives the same packages.
+    - A disbursement with more than max_orders orders goes into no package: it becomes
+      REQUIRES_ATTENTION and raises a (CRITICAL) alert, to be processed by hand.
 
-    Los disbursements se leen bloqueados (FOR UPDATE): si dos corridas arman paquetes a la vez, la
-    segunda espera a la primera y ya no ve los disbursements que quedaron con paquete.
+    The disbursements are read locked (FOR UPDATE): if two runs build packages at the same time, the
+    second one waits for the first and no longer sees the disbursements that got a package.
     """
     date_to = date_to or date_from
     max_orders = max_orders or settings.PACKAGE_MAX_ORDERS
@@ -28,7 +28,7 @@ def create_disbursement_packages(date_from: date, date_to: date | None = None, m
 
     with transaction.atomic():
         disbursements = list(Disbursement.objects.to_package(date_from, date_to))
-        order_counts = Disbursement.objects.order_counts([d.id for d in disbursements])
+        order_counts = Disbursement.objects.order_counts([disbursement.id for disbursement in disbursements])
 
         groups = []
         current, current_orders = [], 0
@@ -46,14 +46,14 @@ def create_disbursement_packages(date_from: date, date_to: date | None = None, m
             groups.append(current)
 
         result.packages = DisbursementPackage.objects.bulk_create(
-            [DisbursementPackage(order_count=sum(order_counts[d.id] for d in group)) for group in groups]
+            [DisbursementPackage(order_count=sum(order_counts[disbursement.id] for disbursement in group)) for group in groups]
         )
-        # Una query por paquete: ~1 por día y ~260 en el backfill completo.
+        # One query per package: ~1 per day and ~260 in the whole backfill.
         for package, group in zip(result.packages, groups):
-            Disbursement.objects.assign_to_package([d.id for d in group], package)
+            Disbursement.objects.assign_to_package([disbursement.id for disbursement in group], package)
 
         if result.requires_attention:
-            Disbursement.objects.mark_as_requires_attention([d.id for d in result.requires_attention])
+            Disbursement.objects.mark_as_requires_attention([disbursement.id for disbursement in result.requires_attention])
 
     for disbursement in result.requires_attention:
         alert(

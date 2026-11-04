@@ -5,4 +5,4 @@ from dataclasses import dataclass, field
 class ImportResult:
     created: int = 0
     skipped_existing: int = 0
-    invalid: list = field(default_factory=list)  # (número de línea, motivo)
+    invalid: list = field(default_factory=list)  # (line number, reason)

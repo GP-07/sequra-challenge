@@ -1,7 +1,7 @@
-"""Monthly fees: lo que le falta a cada merchant para llegar a su minimum_monthly_fee en un mes.
+"""Monthly fees: what each merchant is missing to reach its minimum_monthly_fee in a month.
 
-amount = minimum_monthly_fee - comisiones de las orders creadas en el mes (pagadas o no). Solo se
-guarda una fila si amount > 0. Queda registrada en MonthlyFee y no se descuenta de ningún
+amount = minimum_monthly_fee - commissions of the orders created in the month (paid or not). A row
+is only saved if amount > 0. It is recorded in MonthlyFee and is not deducted from any
 disbursement.
 """
 
@@ -17,11 +17,11 @@ from orders.models import Order
 
 
 def calculate_monthly_fees(month: date) -> list:
-    """Calcula las monthly fees del mes que empieza en `month` (primer día del mes).
+    """Calculates the monthly fees of the month starting on `month` (first day of the month).
 
-    Tres queries por mes: merchants alcanzados, comisiones por merchant y fees ya calculadas. Las fees
-    que ya existen no se recalculan ni se tocan, así que correrlo dos veces no duplica nada.
-    Devuelve las fees creadas.
+    Three queries per month: merchants in scope, commissions per merchant and fees already calculated.
+    Existing fees are neither recalculated nor touched, so running it twice duplicates nothing.
+    Returns the created fees.
     """
     month_start = month.replace(day=1)
     month_end = month_start.replace(day=calendar.monthrange(month_start.year, month_start.month)[1])
@@ -52,10 +52,10 @@ def calculate_monthly_fees(month: date) -> list:
 
 
 def calculate_monthly_fees_for_range(month_from: date, month_to: date) -> list:
-    """Calcula los meses de `month_from` a `month_to`, ambos incluidos (primer día de cada mes).
+    """Calculates the months from `month_from` to `month_to`, both included (first day of each month).
 
-    Los parámetros son los meses que se cubren, no las fechas de corrida: para cubrir enero y febrero
-    se pasa 2023-01-01 → 2023-02-01 (la corrida de febrero sería el 01/03).
+    The parameters are the months covered, not the run dates: to cover January and February, pass
+    2023-01-01 → 2023-02-01 (February's run would be on 03/01).
     """
     month = month_from.replace(day=1)
     last_month = month_to.replace(day=1)

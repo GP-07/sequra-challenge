@@ -5,7 +5,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Incluye las dependencias de desarrollo para poder correr los tests dentro del contenedor.
+# Includes the development dependencies so the tests can run inside the container.
 COPY requirements.txt requirements-dev.txt ./
 RUN pip install --no-cache-dir -r requirements-dev.txt
 

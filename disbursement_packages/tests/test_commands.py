@@ -1,4 +1,4 @@
-"""check_package_status y release_stuck_packages: comandos manuales para seguir los paquetes."""
+"""check_package_status and release_stuck_packages: manual commands to follow the packages."""
 
 from datetime import date, timedelta
 
@@ -34,7 +34,7 @@ def packages():
         "completed": package_paid_on(date(2023, 2, 2), Status.COMPLETED, "a_merchant"),
         "failed": package_paid_on(date(2023, 2, 3), Status.FAILED, "b_merchant"),
         "processing": package_paid_on(date(2023, 2, 3), Status.PROCESSING, "c_merchant"),
-        # Fuera del rango 2/2 - 2/3.
+        # Outside the 2/2 - 2/3 range.
         "pending": package_paid_on(date(2023, 2, 4), Status.PENDING, "d_merchant"),
     }
 

@@ -1,11 +1,11 @@
-"""create_disbursements_daily / weekly y el backfill create_disbursements_for_range.
+"""create_disbursements_daily / weekly and the create_disbursements_for_range backfill.
 
-Los tests de un día corren con las dos estrategias (create_disbursements, por merchant, y
-create_disbursements_in_bulk, la del backfill) para garantizar que den el mismo resultado.
+The single-day tests run with both strategies (create_disbursements, per merchant, and
+create_disbursements_in_bulk, the backfill one) to make sure they give the same result.
 
-Ventanas (opción A): la corrida del día D paga días cerrados.
-- DAILY: orders de D-1.
-- WEEKLY: el weekday del live_on, orders de D-7 a D-1.
+Windows (option A): the run of day D pays closed days.
+- DAILY: orders of D-1.
+- WEEKLY: on the weekday of live_on, orders from D-7 to D-1.
 """
 
 import logging
@@ -31,7 +31,7 @@ pytestmark = pytest.mark.django_db
 DAILY = Merchant.Frequency.DAILY
 WEEKLY = Merchant.Frequency.WEEKLY
 
-# Miércoles.
+# Wednesday.
 PAYMENT_DATE = date(2023, 2, 8)
 YESTERDAY = PAYMENT_DATE - timedelta(days=1)
 
@@ -48,7 +48,7 @@ def daily_merchant():
 
 @pytest.fixture
 def weekly_merchant():
-    # 2023-01-04 también es miércoles.
+    # 2023-01-04 is also a Wednesday.
     return MerchantFactory(reference="deckow_gibson", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 4))
 
 
@@ -133,9 +133,9 @@ def test_pays_the_closed_week_on_the_live_on_weekday(create_for_day, weekly_merc
 
 
 def test_weekly_merchant_is_only_paid_on_its_own_weekday(create_for_day, weekly_merchant):
-    # deckow_gibson tiene live_on un miércoles: su día de pago es el miércoles. La corrida del jueves 9/2
-    # NO es una corrida de pago para él, así que no hace nada aunque tenga orders sin pagar.
-    # Su siguiente día de pago es el miércoles 15/2, que paga los días cerrados del 8/2 al 14/2.
+    # deckow_gibson has live_on on a Wednesday: its payment day is Wednesday. The run of Thursday 2/9
+    # is NOT a payment run for it, so it does nothing even if it has unpaid orders.
+    # Its next payment day is Wednesday 2/15, which pays the closed days from 2/8 to 2/14.
     wednesday_order = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 8))
     saturday_order = OrderFactory(merchant=weekly_merchant, order_creation_date=date(2023, 2, 11))
 
@@ -151,8 +151,8 @@ def test_weekly_merchant_is_only_paid_on_its_own_weekday(create_for_day, weekly_
 
 
 def test_weekly_merchant_live_on_a_thursday_is_paid_on_thursdays(create_for_day):
-    # Mismas orders que el test anterior, pero el merchant tiene live_on un jueves (05/01/2023):
-    # la corrida del jueves 9/2 paga del 2/2 al 8/2 y la del jueves 16/2, del 9/2 al 15/2.
+    # Same orders as the previous test, but the merchant has live_on on a Thursday (2023-01-05):
+    # the run of Thursday 2/9 pays from 2/2 to 2/8, and the one of Thursday 2/16, from 2/9 to 2/15.
     thursday_merchant = MerchantFactory(
         reference="thursday_merchant", disbursement_frequency=WEEKLY, live_on=date(2023, 1, 5)
     )
@@ -231,7 +231,7 @@ def test_disbursement_is_saved_with_the_natural_key_hash_of_its_merchant_and_dat
 
 
 def test_natural_key_hash_is_the_same_for_the_same_merchant_and_date(daily_merchant):
-    # Es lo que permite que el constraint único de la DB frene una segunda creación.
+    # This is what lets the DB unique constraint stop a second creation.
     first = natural_key_hash(daily_merchant.id, PAYMENT_DATE)
     second = natural_key_hash(daily_merchant.id, PAYMENT_DATE)
 
@@ -250,7 +250,7 @@ def test_natural_key_hash_changes_with_the_merchant_or_the_date(daily_merchant, 
 # --- delayed orders ---
 
 def test_delayed_order_goes_into_the_next_payment_and_is_flagged(create_for_day, daily_merchant, caplog):
-    # Order del día 5 que entró tarde: el pago del 6 ya se hizo sin ella.
+    # Order of the 5th that arrived late: the payment of the 6th was already made without it.
     delayed = OrderFactory(merchant=daily_merchant, order_creation_date=PAYMENT_DATE - timedelta(days=3))
     on_time = OrderFactory(merchant=daily_merchant, order_creation_date=YESTERDAY)
 
@@ -260,7 +260,7 @@ def test_delayed_order_goes_into_the_next_payment_and_is_flagged(create_for_day,
     disbursement = Disbursement.objects.get(merchant=daily_merchant, payment_date=PAYMENT_DATE)
     assert set(disbursement.orders.values_list("id", flat=True)) == {delayed.id, on_time.id}
     assert disbursement.has_processed_delayed_orders is True
-    assert any(r.levelno == logging.WARNING and "padberg_group" in r.getMessage() for r in caplog.records)
+    assert any(record.levelno == logging.WARNING and "padberg_group" in record.getMessage() for record in caplog.records)
 
 
 def test_delayed_order_alone_creates_a_disbursement(create_for_day, daily_merchant):
@@ -285,15 +285,15 @@ def test_weekly_delayed_order_from_a_previous_week(create_for_day, weekly_mercha
 # --- backfill range ---
 
 def test_backfill_creates_daily_and_weekly_disbursements_on_the_right_dates(daily_merchant, weekly_merchant):
-    """Backfill de 2 semanas.
+    """2-week backfill.
 
-    Datos: una order por día, del 1/2 al 14/2, para padberg_group (DAILY) y para deckow_gibson
-    (WEEKLY, cobra los miércoles).
-    Ejecución: create_disbursements_for_range del 2/2 al 15/2 (fechas de pago).
-    Resultado:
-    - padberg_group: un disbursement por día de pago, del 2/2 al 15/2 (14), cada uno con las orders del día anterior.
-    - deckow_gibson: dos disbursements, los miércoles 8/2 (orders del 1/2 al 7/2) y 15/2 (del 8/2 al 14/2).
-    - Las 28 orders quedan asignadas y el servicio devuelve los 16 disbursements creados.
+    Data: one order per day, from 2/1 to 2/14, for padberg_group (DAILY) and for deckow_gibson
+    (WEEKLY, paid on Wednesdays).
+    Run: create_disbursements_for_range from 2/2 to 2/15 (payment dates).
+    Result:
+    - padberg_group: one disbursement per payment day, from 2/2 to 2/15 (14), each one with the orders of the previous day.
+    - deckow_gibson: two disbursements, on Wednesdays 2/8 (orders from 2/1 to 2/7) and 2/15 (from 2/8 to 2/14).
+    - The 28 orders are assigned and the service returns the 16 created disbursements.
     """
     for day in range(1, 15):
         OrderFactory(merchant=daily_merchant, order_creation_date=date(2023, 2, day))
@@ -302,12 +302,12 @@ def test_backfill_creates_daily_and_weekly_disbursements_on_the_right_dates(dail
     result = create_disbursements_for_range(date(2023, 2, 2), date(2023, 2, 15))
 
     daily = Disbursement.objects.filter(merchant=daily_merchant).order_by("payment_date")
-    assert list(daily.values_list("payment_date", flat=True)) == [date(2023, 2, d) for d in range(2, 16)]
-    assert all(d.orders.count() == 1 for d in daily)
+    assert list(daily.values_list("payment_date", flat=True)) == [date(2023, 2, disbursement) for disbursement in range(2, 16)]
+    assert all(disbursement.orders.count() == 1 for disbursement in daily)
     weekly = Disbursement.objects.filter(merchant=weekly_merchant).order_by("payment_date")
-    assert [(d.payment_date, d.orders.count()) for d in weekly] == [(date(2023, 2, 8), 7), (date(2023, 2, 15), 7)]
+    assert [(disbursement.payment_date, disbursement.orders.count()) for disbursement in weekly] == [(date(2023, 2, 8), 7), (date(2023, 2, 15), 7)]
     assert not Order.objects.filter(disbursement__isnull=True).exists()
-    assert sorted(d.id for d in result.created) == sorted(Disbursement.objects.values_list("id", flat=True))
+    assert sorted(disbursement.id for disbursement in result.created) == sorted(Disbursement.objects.values_list("id", flat=True))
     assert len(result.created) == 16
 
 

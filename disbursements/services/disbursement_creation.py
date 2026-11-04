@@ -1,21 +1,21 @@
-"""Creación de disbursements (opción A: la corrida del día D paga días cerrados).
+"""Disbursement creation (option A: the run of day D pays closed days).
 
-- DAILY: orders del día D-1.
-- WEEKLY: solo el día de la semana del live_on del merchant; orders de D-7 a D-1.
+- DAILY: orders of day D-1.
+- WEEKLY: only on the weekday of the merchant's live_on; orders from D-7 to D-1.
 
-Además entran las orders atrasadas: sin disbursement y de antes de la ventana (llegaron tarde). En ese
-caso el disbursement queda con has_processed_delayed_orders y se loguea un WARNING.
+Delayed orders are included too: without a disbursement and from before the window (they arrived
+late). In that case the disbursement gets has_processed_delayed_orders and a WARNING is logged.
 
-Exactly once: el natural_key_hash (merchant, fecha de pago) es único en la DB. Si el disbursement ya
-existe no se toca, y las orders que llegaron después esperan al próximo pago.
+Exactly once: the natural_key_hash (merchant, payment date) is unique in the DB. If the disbursement
+already exists it is not touched, and the orders that arrived later wait for the next payment.
 
-Dos estrategias con el mismo resultado:
-- create_disbursements (corrida diaria): un merchant por transacción. Si falla uno, los demás siguen.
-- create_disbursements_in_bulk (backfill del histórico): una transacción y unas pocas queries por día,
-  sin importar cuántos merchants haya. Si falla algo se revierte el día entero, y si otra corrida
-  crea a la vez alguno de los mismos disbursements, el constraint único corta el día con un
-  IntegrityError (nunca hay duplicados). Se acepta porque el backfill se corre a mano, una vez, y es
-  idempotente: se vuelve a correr y saltea lo que ya existe.
+Two strategies with the same result:
+- create_disbursements (daily run): one merchant per transaction. If one fails, the others go on.
+- create_disbursements_in_bulk (historical backfill): one transaction and a few queries per day,
+  whatever the number of merchants. If anything fails the whole day is rolled back, and if another
+  run creates any of the same disbursements at the same time, the unique constraint stops the day
+  with an IntegrityError (there are never duplicates). Accepted because the backfill is run by hand,
+  once, and it is idempotent: running it again skips what already exists.
 """
 
 import hashlib
@@ -34,16 +34,16 @@ logger = logging.getLogger(__name__)
 
 
 def natural_key_hash(merchant_id, payment_date: date) -> str:
-    """sha256 (hex, 64 caracteres) de (merchant, fecha de pago).
+    """sha256 (hex, 64 characters) of (merchant, payment date).
 
-    Siempre da lo mismo para los mismos datos, así que el constraint único de la DB impide crear dos
-    veces el mismo disbursement aunque el proceso corra dos veces a la vez.
+    It is always the same for the same data, so the DB unique constraint prevents creating the same
+    disbursement twice even if the process runs twice at the same time.
     """
     return hashlib.sha256(f"{merchant_id}:{payment_date.isoformat()}".encode()).hexdigest()
 
 
 def payment_window(payment_date: date, frequency: str) -> tuple[date, date]:
-    """Primer y último día (inclusive) de las orders que paga la corrida de payment_date."""
+    """First and last day (inclusive) of the orders paid by the run of payment_date."""
     window_end = payment_date - timedelta(days=1)
     if frequency == Merchant.Frequency.WEEKLY:
         return payment_date - timedelta(days=7), window_end
@@ -57,7 +57,7 @@ def disbursement_reference(merchant_reference: str, window_start: date, window_e
 
 
 def disbursement_fields(merchant_id, merchant_reference: str, payment_date: date, frequency: str, oldest_order_date: date) -> dict:
-    """Campos de un disbursement nuevo, salvo natural_key_hash."""
+    """Fields of a new disbursement, except natural_key_hash."""
     window_start, window_end = payment_window(payment_date, frequency)
     return {
         "merchant_id": merchant_id,
@@ -78,10 +78,10 @@ def log_delayed_orders(disbursement: Disbursement, merchant_reference: str, olde
 
 
 def create_disbursements(payment_date: date, frequency: str) -> CreationResult:
-    """create_disbursements_daily / weekly para una fecha de pago (corrida diaria).
+    """create_disbursements_daily / weekly for a payment date (daily run).
 
-    Dos queries para todo el día (merchants y orders pendientes por merchant) y unas pocas por cada
-    disbursement creado, cada uno en su propia transacción.
+    Two queries for the whole day (merchants and pending orders per merchant) and a few for each
+    created disbursement, each one in its own transaction.
     """
     result = CreationResult()
     _, window_end = payment_window(payment_date, frequency)
@@ -104,10 +104,10 @@ def create_disbursements(payment_date: date, frequency: str) -> CreationResult:
 
 
 def create_disbursements_in_bulk(payment_date: date, frequency: str) -> CreationResult:
-    """Lo mismo que create_disbursements, en bloque y en una sola transacción (backfill del histórico).
+    """The same as create_disbursements, in bulk and in a single transaction (historical backfill).
 
-    Cinco queries por día, sin importar la cantidad de merchants: merchants, orders pendientes,
-    disbursements existentes, insert de los nuevos y asignación de orders.
+    Five queries per day, whatever the number of merchants: merchants, pending orders, existing
+    disbursements, insert of the new ones and assignment of orders.
     """
     result = CreationResult()
     _, window_end = payment_window(payment_date, frequency)
@@ -130,7 +130,7 @@ def create_disbursements_in_bulk(payment_date: date, frequency: str) -> Creation
         result.skipped_existing = len(existing)
         created = Disbursement.objects.bulk_create(to_create)
 
-        Order.objects.assign_to_disbursements({d.merchant_id: d.id for d in created}, window_end)
+        Order.objects.assign_to_disbursements({disbursement.merchant_id: disbursement.id for disbursement in created}, window_end)
 
     result.created = created
     for disbursement in created:
@@ -139,10 +139,10 @@ def create_disbursements_in_bulk(payment_date: date, frequency: str) -> Creation
 
 
 def create_disbursements_for_range(date_from: date, date_to: date) -> CreationResult:
-    """Backfill del histórico: para cada fecha de pago del rango (inclusive), DAILY y WEEKLY, en bloque.
+    """Historical backfill: for each payment date of the range (inclusive), DAILY and WEEKLY, in bulk.
 
-    Si falla un día, corta: lo de los días anteriores ya quedó guardado y se lanza DayCreationFailed
-    con la fecha. Volver a correrlo es seguro, porque saltea lo que ya existe.
+    If a day fails, it stops: the previous days are already saved and DayCreationFailed is raised
+    with the date. Running it again is safe, because it skips what already exists.
     """
     result = CreationResult()
     payment_date = date_from

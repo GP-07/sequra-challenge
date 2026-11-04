@@ -10,18 +10,18 @@ class PackagingResult:
 @dataclass
 class CheckResult:
     to_retry: list = field(default_factory=list)
-    # Paquetes trabados en PROCESSING que el control liberó antes de decidir.
+    # Packages stuck in PROCESSING that the check released before deciding.
     released: list = field(default_factory=list)
 
 
 @dataclass
 class ReleaseResult:
-    # Pasaron de PROCESSING a FAILED: el worker que los tenía ya no está.
+    # Moved from PROCESSING to FAILED: the worker that had them is gone.
     released: list = field(default_factory=list)
-    # Un worker vivo los está procesando (tienen el lock): no se tocan.
+    # A live worker is processing them (they hold the lock): not touched.
     being_processed: list = field(default_factory=list)
-    # En PROCESSING hace menos de PACKAGE_STUCK_AFTER_MINUTES: todavía no se consideran trabados.
+    # In PROCESSING for less than PACKAGE_STUCK_AFTER_MINUTES: not considered stuck yet.
     too_recent: list = field(default_factory=list)
-    # No están en PROCESSING: (id, estado).
+    # Not in PROCESSING: (id, status).
     not_processing: list = field(default_factory=list)
     not_found: list = field(default_factory=list)

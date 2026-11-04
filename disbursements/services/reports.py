@@ -1,10 +1,11 @@
-"""Tabla anual del README.
+"""Yearly table of the README.
 
-- Disbursements: solo los COMPLETED, por año de su fecha de pago. disbursed_amount es lo pagado al
-  merchant (bruto menos comisiones) y order_fees_amount, las comisiones.
-- Monthly fees: por año del mes que cubren (la de diciembre cuenta en ese año aunque se calcule en enero).
+- Disbursements: only the COMPLETED ones, by year of their payment date. disbursed_amount is what was
+  paid to the merchant (gross minus commissions) and order_fees_amount, the commissions.
+- Monthly fees: by year of the month they cover (December's counts in that year even if it is
+  calculated in January).
 
-Dos queries en total, una por app; los años se unen en Python.
+Two queries in total, one per app; the years are merged in Python.
 """
 
 from core.constants import ZERO_AMOUNT
@@ -18,7 +19,7 @@ NO_MONTHLY_FEES = MonthlyFeesTotals(0, ZERO_AMOUNT)
 
 
 def yearly_report() -> list[dict]:
-    """Filas de la tabla anual del README, una por año con disbursements o monthly fees, en orden."""
+    """Rows of the README yearly table, one per year with disbursements or monthly fees, in order."""
     disbursements = Disbursement.objects.completed_totals_by_year()
     monthly_fees = MonthlyFee.objects.totals_by_year()
     rows = []

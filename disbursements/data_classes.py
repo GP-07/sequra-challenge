@@ -11,11 +11,11 @@ class CreationResult:
 @dataclass
 class ReprocessResult:
     processed: list = field(default_factory=list)
-    # Ya estaban COMPLETED: no se tocan.
+    # Already COMPLETED: not touched.
     skipped_completed: list = field(default_factory=list)
-    # Su paquete lo está procesando otro worker.
+    # Another worker is processing their package.
     skipped_in_progress: list = field(default_factory=list)
-    # Todavía no tiene paquete: lo va a tomar el flujo normal.
+    # No package yet: the normal flow will take it.
     skipped_without_package: list = field(default_factory=list)
     not_found: list = field(default_factory=list)
 

@@ -1,4 +1,4 @@
-"""load_merchants: carga de merchants desde un CSV de la carpeta de importación."""
+"""load_merchants: loading merchants from a CSV in the import folder."""
 
 from datetime import date
 from decimal import Decimal
@@ -12,7 +12,7 @@ from merchants.models import Merchant
 
 pytestmark = pytest.mark.django_db
 
-# CSVs de prueba, con el mismo formato que los del challenge.
+# Test CSV files, with the same format as the challenge ones.
 DATA_DIR = Path(__file__).parent / "data"
 
 
@@ -45,12 +45,12 @@ def test_load_merchants_is_idempotent_by_id(merchants_csv):
 
 
 def test_load_merchants_invalid_rows_are_skipped_and_reported(import_dir):
-    # Uuid, frecuencia, fecha y minimum negativo inválidos.
+    # Invalid uuid, frequency, date and negative minimum.
     put_in_import_dir(import_dir, DATA_DIR / "merchants_with_invalid_rows.csv", "merchants.csv")
 
     output = run_command("load_merchants", "merchants.csv")
 
-    # padberg_group tiene minimum 0.0: es válido y se carga.
+    # padberg_group has minimum 0.0: it is valid and is loaded.
     assert set(Merchant.objects.values_list("reference", flat=True)) == {"padberg_group", "deckow_gibson"}
     assert "invalid" in output.lower()
 

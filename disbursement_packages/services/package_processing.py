@@ -1,21 +1,21 @@
-"""Procesamiento de un paquete: totales por disbursement con pocas queries por paquete.
+"""Processing of a package: totals per disbursement with a few queries per package.
 
-1. mark_package_as_processing: toma el paquete (transacción propia).
-2. En una sola transacción:
-   - lock_package_while_processing: bloquea la fila del paquete hasta el final de la transacción y fija
-     un statement_timeout. El lock dice "un worker vivo lo está procesando": si el worker muere,
-     Postgres lo libera y el paquete puede detectarse como trabado (package_release).
-   - aggregate_package_totals: una query agregada con los totales de cada disbursement no COMPLETED.
-   - validate_totals: en Python, sin DB. Un disbursement inválido queda FAILED (no retryable) con su
-     error y no corta a los demás.
-   - save_disbursement_results: bulk updates de los COMPLETED y de los FAILED.
-   - estado final del paquete: COMPLETED si todos sus disbursements lo están; si no, FAILED.
-3. Error de infraestructura o inesperado: se revierte toda la transacción y los disbursements no
-   COMPLETED del paquete quedan FAILED con el error, retryable o no según el tipo de error.
+1. mark_package_as_processing: takes the package (its own transaction).
+2. In a single transaction:
+   - lock_package_while_processing: locks the package row until the end of the transaction and sets
+     a statement_timeout. The lock says "a live worker is processing it": if the worker dies,
+     Postgres releases it and the package can be detected as stuck (package_release).
+   - aggregate_package_totals: one aggregated query with the totals of each non-COMPLETED disbursement.
+   - validate_totals: in Python, without the DB. An invalid disbursement becomes FAILED (not
+     retryable) with its error and does not stop the others.
+   - save_disbursement_results: bulk updates of the COMPLETED and the FAILED ones.
+   - final package status: COMPLETED if all its disbursements are; otherwise, FAILED.
+3. Infrastructure or unexpected error: the whole transaction is rolled back and the non-COMPLETED
+   disbursements of the package become FAILED with the error, retryable or not depending on the error.
 
-Reprocesar solo toca los disbursements que no están COMPLETED, así que es idempotente.
-Con disbursement_ids se procesan solo esos disbursements del paquete (reprocess manual por id); el
-estado del paquete se calcula con todos sus disbursements.
+Reprocessing only touches the disbursements that are not COMPLETED, so it is idempotent.
+With disbursement_ids only those disbursements of the package are processed (manual reprocess by
+id); the package status is calculated with all its disbursements.
 """
 
 import logging
@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 def mark_package_as_processing(package_id: int) -> bool:
-    """Toma el paquete con un solo UPDATE atómico: PENDING/FAILED → PROCESSING. True si lo tomó.
+    """Takes the package with a single atomic UPDATE: PENDING/FAILED → PROCESSING. True if it took it.
 
-    Es seguro con dos workers a la vez: la condición de estado va en el WHERE del UPDATE. En Postgres,
-    el segundo UPDATE espera el lock de la fila, re-evalúa el WHERE con el estado ya en PROCESSING y
-    afecta 0 filas, así que solo uno de los dos toma el paquete.
+    It is safe with two workers at the same time: the status condition is in the UPDATE's WHERE. In
+    Postgres, the second UPDATE waits for the row lock, re-evaluates the WHERE with the status already
+    PROCESSING and affects 0 rows, so only one of the two takes the package.
     """
     taken = DisbursementPackage.objects.filter(
         id=package_id, status__in=[DisbursementPackage.Status.PENDING, DisbursementPackage.Status.FAILED]
@@ -47,10 +47,10 @@ def mark_package_as_processing(package_id: int) -> bool:
 
 
 def lock_package_while_processing(package_id: int) -> None:
-    """Bloquea la fila del paquete (FOR UPDATE) y limita cada query de la transacción.
+    """Locks the package row (FOR UPDATE) and limits each query of the transaction.
 
-    Solo llega acá el worker que tomó el paquete, así que nadie más espera este lock: el control de
-    paquetes trabados lo consulta con SKIP LOCKED. set_config(..., true) vale solo para esta transacción.
+    Only the worker that took the package gets here, so nobody else waits for this lock: the stuck
+    package check asks for it with SKIP LOCKED. set_config(..., true) applies to this transaction only.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -60,18 +60,19 @@ def lock_package_while_processing(package_id: int) -> None:
 
 
 def aggregate_package_totals(package_id: int, disbursement_ids: list[int] | None = None) -> dict[int, DisbursementTotals]:
-    """Una sola query: bruto y comisiones de cada disbursement no COMPLETED del paquete.
+    """A single query: gross amount and commissions of each non-COMPLETED disbursement of the package.
 
-    Con disbursement_ids, solo de esos.
+    With disbursement_ids, only of those.
     """
     return Disbursement.objects.unfinished_in_package(package_id, disbursement_ids).totals()
 
 
 def validate_totals(totals: DisbursementTotals) -> str | None:
-    """None si los totales son válidos; si no, el motivo.
+    """None if the totals are valid; otherwise, the reason.
 
-    Ni el bruto ni las comisiones son negativos, y las comisiones no superan al bruto (no se paga un
-    monto negativo). Las orders ya se validan al ingresar; esto protege ante un dato corregido a mano.
+    Neither the gross amount nor the commissions are negative, and the commissions do not exceed the
+    gross amount (a negative amount is never paid). Orders are already validated when they come in;
+    this protects against data fixed by hand.
     """
     if totals.gross_amount < 0 or totals.commission_fee_amount < 0:
         return f"Negative amounts: gross {totals.gross_amount}, commission fees {totals.commission_fee_amount}."
@@ -81,18 +82,18 @@ def validate_totals(totals: DisbursementTotals) -> str | None:
 
 
 def save_disbursement_results(completed: list[DisbursementTotals], failed: list[tuple[int, str]]) -> None:
-    """Bulk updates (por lotes) de los disbursements COMPLETED (con totales) y FAILED (con su error)."""
+    """Bulk updates (in batches) of the COMPLETED disbursements (with totals) and FAILED ones (with their error)."""
     Disbursement.objects.mark_as_completed(completed)
     Disbursement.objects.mark_as_failed_with_errors(failed, is_retryable=False)
 
 
 def process_disbursement_package(package_id: int, disbursement_ids: list[int] | None = None) -> bool:
-    """Devuelve False si no pudo tomar el paquete (otro worker lo tiene o no está PENDING/FAILED).
+    """Returns False if it could not take the package (another worker has it, or it is not PENDING/FAILED).
 
-    Con disbursement_ids solo procesa esos. El paquete queda COMPLETED si todos sus disbursements lo
-    están; si no, queda FAILED. is_retryable de cada disbursement FAILED depende del tipo de error:
-    - error de infraestructura (RETRYABLE_ERRORS): True;
-    - falla de datos o error inesperado: False.
+    With disbursement_ids it only processes those. The package becomes COMPLETED if all its
+    disbursements are; otherwise, FAILED. is_retryable of each FAILED disbursement depends on the error:
+    - infrastructure error (RETRYABLE_ERRORS): True;
+    - data failure or unexpected error: False.
     """
     if not mark_package_as_processing(package_id):
         return False

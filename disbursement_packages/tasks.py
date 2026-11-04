@@ -1,4 +1,4 @@
-"""Tasks de paquetes: armado (encolado por la creación diaria), procesamiento y control."""
+"""Package tasks: packaging (enqueued by the daily creation), processing and checks."""
 
 from django.conf import settings
 from django.utils import timezone
@@ -23,7 +23,7 @@ def process_disbursement_package(package_id):
 
 @db_task()
 def create_disbursement_packages_task():
-    """Arma los paquetes del día y encola un process_disbursement_package por paquete."""
+    """Builds the packages of the day and enqueues one process_disbursement_package per package."""
     result = create_disbursement_packages(now().date())
     for package in result.packages:
         process_disbursement_package(package.id)
@@ -31,7 +31,7 @@ def create_disbursement_packages_task():
 
 @db_periodic_task(crontab(minute="0", hour=",".join(str(hour) for hour in settings.CHECK_PACKAGES_HOURS)))
 def check_disbursement_packages_task():
-    """Re-encola los paquetes que corresponde reintentar. El último horario del día solo alerta."""
+    """Re-enqueues the packages that should be retried. The last run of the day only alerts."""
     current = now()
     result = check_disbursement_packages(current.date(), is_last_run=current.hour == max(settings.CHECK_PACKAGES_HOURS))
     for package_id in result.to_retry:

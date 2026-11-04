@@ -1,4 +1,4 @@
-"""Consultas sobre orders que usan otras apps, con nombres de negocio."""
+"""Queries on orders used by other apps, with business names."""
 
 from django.db import models
 from django.db.models import Case, Min, Sum, Value, When
@@ -6,9 +6,9 @@ from django.db.models import Case, Min, Sum, Value, When
 
 class OrderQuerySet(models.QuerySet):
     def pending_disbursement_by_merchant(self, merchant_ids, up_to) -> dict:
-        """Una sola query: orders sin disbursement creadas hasta up_to (inclusive), por merchant.
+        """A single query: orders without a disbursement created up to up_to (inclusive), per merchant.
 
-        Devuelve {merchant_id: fecha de la order más vieja}; un merchant sin orders pendientes no aparece.
+        Returns {merchant_id: date of the oldest order}; a merchant without pending orders is not included.
         """
         rows = (
             self.filter(merchant_id__in=merchant_ids, disbursement__isnull=True, order_creation_date__lte=up_to)
@@ -20,15 +20,15 @@ class OrderQuerySet(models.QuerySet):
         return dict(rows)
 
     def assign_to_disbursement(self, merchant_id, up_to, disbursement_id) -> int:
-        """Asigna al disbursement las orders del merchant sin disbursement creadas hasta up_to. Devuelve cuántas."""
+        """Assigns to the disbursement the merchant's orders without a disbursement created up to up_to. Returns how many."""
         return self.filter(
             merchant_id=merchant_id, disbursement__isnull=True, order_creation_date__lte=up_to
         ).update(disbursement_id=disbursement_id)
 
     def assign_to_disbursements(self, disbursement_by_merchant: dict, up_to) -> int:
-        """assign_to_disbursement para varios merchants a la vez, con un solo UPDATE. Devuelve cuántas asignó.
+        """assign_to_disbursement for several merchants at once, with a single UPDATE. Returns how many it assigned.
 
-        disbursement_by_merchant es {merchant_id: disbursement_id}.
+        disbursement_by_merchant is {merchant_id: disbursement_id}.
         """
         if not disbursement_by_merchant:
             return 0
@@ -42,9 +42,9 @@ class OrderQuerySet(models.QuerySet):
         )
 
     def commissions_by_merchant(self, date_from, date_to) -> dict:
-        """Una sola query: suma de commission_fee por merchant de las orders creadas en el rango (inclusive).
+        """A single query: sum of commission_fee per merchant of the orders created in the range (inclusive).
 
-        Cuentan todas las orders creadas en el rango, estén pagadas o no.
+        Every order created in the range counts, whether it is paid or not.
         """
         rows = (
             self.filter(order_creation_date__range=(date_from, date_to))

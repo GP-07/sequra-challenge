@@ -1,4 +1,4 @@
-"""create_disbursement_packages: arma paquetes de hasta N orders sin partir disbursements."""
+"""create_disbursement_packages: builds packages of up to N orders without splitting disbursements."""
 
 import logging
 from datetime import date
@@ -26,19 +26,19 @@ def disbursement_with(reference, number_of_orders, payment_date=PAYMENT_DATE, **
 
 
 def test_packs_disbursements_in_a_deterministic_order_without_splitting():
-    # Orden determinístico: fecha de pago e id del merchant (el orden en que se crearon), no su reference.
-    c = disbursement_with("c_merchant", 2)
-    a = disbursement_with("a_merchant", 2)
-    b = disbursement_with("b_merchant", 1)
+    # Deterministic order: payment date and merchant id (the order they were created in), not their reference.
+    disbursement_c = disbursement_with("c_merchant", 2)
+    disbursement_a = disbursement_with("a_merchant", 2)
+    disbursement_b = disbursement_with("b_merchant", 1)
 
     result = create_disbursement_packages(PAYMENT_DATE, max_orders=3)
 
     first, second = result.packages
-    assert set(first.disbursements.values_list("id", flat=True)) == {c.id}
+    assert set(first.disbursements.values_list("id", flat=True)) == {disbursement_c.id}
     assert first.order_count == 2
-    assert set(second.disbursements.values_list("id", flat=True)) == {a.id, b.id}
+    assert set(second.disbursements.values_list("id", flat=True)) == {disbursement_a.id, disbursement_b.id}
     assert second.order_count == 3
-    assert all(p.status == DisbursementPackage.Status.PENDING for p in result.packages)
+    assert all(package.status == DisbursementPackage.Status.PENDING for package in result.packages)
 
 
 def test_same_data_produces_the_same_packages():
@@ -47,7 +47,7 @@ def test_same_data_produces_the_same_packages():
     disbursement_with("c_merchant", 2)
 
     first = composition(create_disbursement_packages(PAYMENT_DATE, max_orders=4))
-    # Se deshacen los paquetes para volver a armarlos sobre los mismos datos.
+    # The packages are undone to build them again over the same data.
     Disbursement.objects.update(package=None)
     DisbursementPackage.objects.all().delete()
     second = composition(create_disbursement_packages(PAYMENT_DATE, max_orders=4))
@@ -57,7 +57,7 @@ def test_same_data_produces_the_same_packages():
 
 
 def composition(result):
-    return [sorted(p.disbursements.values_list("merchant__reference", flat=True)) for p in result.packages]
+    return [sorted(package.disbursements.values_list("merchant__reference", flat=True)) for package in result.packages]
 
 
 def test_uses_the_configured_max_orders_by_default(settings):
@@ -71,8 +71,8 @@ def test_uses_the_configured_max_orders_by_default(settings):
 
 
 def test_disbursement_that_does_not_fit_requires_attention(caplog):
-    # Caso raro: un merchant con más de N orders en un solo pago. No se parte el disbursement;
-    # se procesa a mano (cómo, queda por definir).
+    # Rare case: a merchant with more than N orders in a single payment. The disbursement is not split;
+    # it is processed by hand (how is still to be defined).
     too_big = disbursement_with("big_merchant", 4)
     fits = disbursement_with("small_merchant", 1)
 
@@ -83,9 +83,9 @@ def test_disbursement_that_does_not_fit_requires_attention(caplog):
     fits.refresh_from_db()
     assert too_big.status == Disbursement.Status.REQUIRES_ATTENTION
     assert too_big.package is None
-    assert [d.id for d in result.requires_attention] == [too_big.id]
+    assert [disbursement.id for disbursement in result.requires_attention] == [too_big.id]
     assert fits.package is not None
-    assert any(r.levelno == logging.CRITICAL and too_big.reference in r.getMessage() for r in caplog.records)
+    assert any(record.levelno == logging.CRITICAL and too_big.reference in record.getMessage() for record in caplog.records)
 
 
 def test_only_pending_disbursements_without_package_of_the_date():
