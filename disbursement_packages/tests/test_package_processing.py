@@ -10,7 +10,7 @@ from decimal import Decimal
 from unittest import mock
 
 import pytest
-from django.db import OperationalError
+from django.db import OperationalError, connection
 
 from disbursement_packages.models import DisbursementPackage
 from disbursement_packages.services.package_processing import process_disbursement_package
@@ -191,3 +191,22 @@ def test_reprocessing_only_touches_what_is_not_completed(package):
         Decimal("0.11"),
         Decimal("10.39"),
     )
+
+
+def sleep_in_db(*args):
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_sleep(2)")
+
+
+def test_query_slower_than_the_statement_timeout_fails_the_package_as_retryable(package, settings):
+    # Una query colgada: Postgres la corta al pasar PACKAGE_STATEMENT_TIMEOUT_SECONDS.
+    settings.PACKAGE_STATEMENT_TIMEOUT_SECONDS = 1
+    with mock.patch(f"{SERVICE}.aggregate_package_totals", side_effect=sleep_in_db):
+        process_disbursement_package(package.id)
+
+    package.refresh_from_db()
+    assert package.status == Status.FAILED
+    for disbursement in Disbursement.objects.filter(package=package):
+        assert disbursement.status == Disbursement.Status.FAILED
+        assert disbursement.is_retryable is True
+        assert "statement timeout" in disbursement.error

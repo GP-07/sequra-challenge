@@ -1,5 +1,58 @@
 # Merchant disbursements
 
+## Running with Docker
+
+Services: `db` (PostgreSQL), `redis` (huey queue), `migrate` (applies migrations and exits) and
+`worker` (huey consumer with the periodic tasks, times in UTC). Commands run in the `app` service.
+
+```bash
+docker compose up -d
+```
+
+Historical load and backfill (the CSV files go in `./import_data`, which is mounted in the
+containers):
+
+```bash
+docker compose run --rm app python manage.py load_merchants merchants.csv
+docker compose run --rm app python manage.py load_orders orders.csv
+docker compose run --rm app python manage.py create_disbursements_for_range --from 2022-09-05 --to 2023-11-08
+docker compose run --rm app python manage.py calculate_monthly_fees_for_range --from 2022-09 --to 2023-11
+docker compose run --rm app python manage.py yearly_report
+```
+
+`create_disbursements_for_range` only enqueues the packages and prints their ids; the `worker`
+processes them in the background (`HUEY_WORKERS`, 4 by default), so run `yearly_report` once the worker has finished
+(`docker compose logs -f worker`). Tests run against their own in-memory PostgreSQL
+(`db_test`), separate from the data:
+
+```bash
+docker compose run --rm test
+docker compose --profile test stop db_test
+```
+
+### Following the packages of a backfill
+
+```bash
+docker compose run --rm app python manage.py check_package_status --from 2022-09-05 --to 2023-11-08
+docker compose run --rm app python manage.py release_stuck_packages <package ids>
+docker compose run --rm app python manage.py retry_disbursement_package <package id>
+```
+
+- `check_package_status` counts the packages by status (pending, processing, completed, failed),
+  by id or by the payment dates of the backfill, and lists the failed and processing ones.
+- A package can get stuck in PROCESSING if the worker dies while processing it: taking the package
+  (PENDING/FAILED → PROCESSING) and calculating it are separate transactions, so the calculation is
+  rolled back but the status stays. `release_stuck_packages` moves those packages to FAILED
+  (retryable), so they can be retried with `retry_disbursement_package`.
+- It never touches a package a live worker is processing: the calculation transaction holds a lock
+  on the package row (`SELECT ... FOR UPDATE`) until it ends, and the release looks for packages with
+  `FOR UPDATE SKIP LOCKED`. When a worker dies, PostgreSQL releases its lock. On top of that, a
+  package must be in PROCESSING for more than `PACKAGE_STUCK_AFTER_MINUTES` (5).
+- A worker that is alive but hung on a query keeps the lock, so the calculation transaction also
+  sets a `statement_timeout` (`PACKAGE_STATEMENT_TIMEOUT_SECONDS`, 5 s): the query is cancelled and
+  the package fails as retryable. Measured on the full backfill in Docker with 4 workers, the slowest
+  package took 0.30 s and the slowest query while processing 0.21 s.
+
 ## Assumptions
 
 - **Two disbursement creations never run at the same time for the same merchant on different
@@ -10,6 +63,17 @@
   that again under the row lock. Guarding against it (rolling back or deleting a disbursement left
   without orders) is cheap but not free, so it is left out for a scenario that should not happen in
   this setup.
+
+## Improvements with more time
+
+- **Creating orders one by one (`create_order`).** New orders only enter today through the
+  `load_orders` command. A service (and a REST endpoint on top of it) to create a single order with
+  its commission would make it easy to keep feeding the daily flow and test it end to end.
+- **A `generate_orders` command** that creates random orders for existing merchants, for the same
+  purpose: exercising the daily creation, packaging and processing with fresh data.
+- **A backfill run id.** Each run of `create_disbursements_for_range` would get an id that groups
+  all the packages it created, so their status can be followed by that single id instead of the
+  list of package ids the command prints.
 
 ## Notes on the provided data
 

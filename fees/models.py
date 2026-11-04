@@ -1,6 +1,7 @@
 from django.db import models
 
 from core.constants import MONEY
+from fees.managers import MonthlyFeeQuerySet
 
 
 class MonthlyFee(models.Model):
@@ -11,6 +12,8 @@ class MonthlyFee(models.Model):
     minimum_monthly_fee = models.DecimalField(**MONEY)
     amount = models.DecimalField(**MONEY)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = MonthlyFeeQuerySet.as_manager()
 
     class Meta:
         constraints = [

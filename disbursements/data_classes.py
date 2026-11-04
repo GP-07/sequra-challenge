@@ -21,6 +21,13 @@ class ReprocessResult:
 
 
 @dataclass(frozen=True)
+class YearlyDisbursementTotals:
+    count: int
+    disbursed_amount: Decimal
+    order_fees_amount: Decimal
+
+
+@dataclass(frozen=True)
 class DisbursementTotals:
     disbursement_id: int
     gross_amount: Decimal

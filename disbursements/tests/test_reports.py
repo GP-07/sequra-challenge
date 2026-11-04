@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import pytest
 
+from core.tests.helpers import run_command
 from disbursements.models import Disbursement
 from disbursements.services.reports import yearly_report
 from disbursements.tests.factories import DisbursementFactory
@@ -96,4 +97,21 @@ def test_year_with_only_monthly_fees():
             "monthly_fees_count": 1,
             "monthly_fees_amount": Decimal("29.00"),
         }
+    ]
+
+
+def test_yearly_report_command_prints_csv():
+    merchant = MerchantFactory(reference="padberg_group", live_on=date(2022, 1, 1))
+    completed(merchant, date(2022, 12, 30), "1234.50", "10.49")
+    MonthlyFee.objects.create(
+        merchant=merchant, month=date(2023, 1, 1), commissions_amount=Decimal("0.00"),
+        minimum_monthly_fee=Decimal("29.00"), amount=Decimal("29.00"),
+    )
+
+    output = run_command("yearly_report")
+
+    assert output.splitlines() == [
+        "year;disbursements_count;disbursed_amount;order_fees_amount;monthly_fees_count;monthly_fees_amount",
+        "2022;1;1224.01;10.49;0;0.00",
+        "2023;0;0.00;0.00;1;29.00",
     ]

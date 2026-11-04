@@ -61,6 +61,9 @@ def test_backfill_creates_packages_and_processes_them(loaded):
     # El comando termina al encolar los paquetes e informa qué armó.
     assert "Disbursements created: 2" in output
     assert "Packages enqueued: 1" in output
+    package = DisbursementPackage.objects.get(disbursements__reference="padberg_group_for_20230201")
+    assert f"  enqueued: {package.id}" in output
+    assert "check_package_status --from 2023-02-01 --to 2023-02-08" in output
 
 
 def test_backfill_run_twice_creates_and_enqueues_nothing_new(loaded):

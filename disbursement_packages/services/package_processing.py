@@ -2,6 +2,9 @@
 
 1. mark_package_as_processing: toma el paquete (transacción propia).
 2. En una sola transacción:
+   - lock_package_while_processing: bloquea la fila del paquete hasta el final de la transacción y fija
+     un statement_timeout. El lock dice "un worker vivo lo está procesando": si el worker muere,
+     Postgres lo libera y el paquete puede detectarse como trabado (package_release).
    - aggregate_package_totals: una query agregada con los totales de cada disbursement no COMPLETED.
    - validate_totals: en Python, sin DB. Un disbursement inválido queda FAILED (no retryable) con su
      error y no corta a los demás.
@@ -17,7 +20,8 @@ estado del paquete se calcula con todos sus disbursements.
 
 import logging
 
-from django.db import transaction
+from django.conf import settings
+from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
@@ -40,6 +44,19 @@ def mark_package_as_processing(package_id: int) -> bool:
         id=package_id, status__in=[DisbursementPackage.Status.PENDING, DisbursementPackage.Status.FAILED]
     ).update(status=DisbursementPackage.Status.PROCESSING, attempts=F("attempts") + 1, updated_at=timezone.now())
     return taken == 1
+
+
+def lock_package_while_processing(package_id: int) -> None:
+    """Bloquea la fila del paquete (FOR UPDATE) y limita cada query de la transacción.
+
+    Solo llega acá el worker que tomó el paquete, así que nadie más espera este lock: el control de
+    paquetes trabados lo consulta con SKIP LOCKED. set_config(..., true) vale solo para esta transacción.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config('statement_timeout', %s, true)", [f"{settings.PACKAGE_STATEMENT_TIMEOUT_SECONDS}s"]
+        )
+    DisbursementPackage.objects.select_for_update().only("id").get(id=package_id)
 
 
 def aggregate_package_totals(package_id: int, disbursement_ids: list[int] | None = None) -> dict[int, DisbursementTotals]:
@@ -81,6 +98,7 @@ def process_disbursement_package(package_id: int, disbursement_ids: list[int] | 
         return False
     try:
         with transaction.atomic():
+            lock_package_while_processing(package_id)
             completed, failed = [], []
             for totals in aggregate_package_totals(package_id, disbursement_ids).values():
                 error = validate_totals(totals)

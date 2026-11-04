@@ -56,8 +56,11 @@ HUEY = {
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
+    "formatters": {"default": {"format": "[%(asctime)s] %(levelname)s:%(name)s:%(message)s"}},
+    "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "default"}},
     "root": {"handlers": ["console"], "level": "INFO"},
+    # El consumer de huey agrega su propio handler: sin esto, cada línea saldría dos veces.
+    "loggers": {"huey": {"propagate": False}},
 }
 
 # Carpeta montada en Docker donde load_merchants y load_orders buscan los archivos.
@@ -68,5 +71,9 @@ PACKAGE_MAX_ORDERS = int(os.environ.get("PACKAGE_MAX_ORDERS", "5000"))
 # Reintentos automáticos de un paquete: uno por cada check que no es el último.
 PACKAGE_MAX_RETRIES = int(os.environ.get("PACKAGE_MAX_RETRIES", "2"))
 PACKAGE_FAILURE_THRESHOLD_PERCENT = int(os.environ.get("PACKAGE_FAILURE_THRESHOLD_PERCENT", "80"))
+# Límite por query al procesar un paquete: corta una query colgada (medido: la más lenta, ~0,2 s).
+PACKAGE_STATEMENT_TIMEOUT_SECONDS = int(os.environ.get("PACKAGE_STATEMENT_TIMEOUT_SECONDS", "5"))
+# Un paquete en PROCESSING sin lock y con más de estos minutos se considera trabado (medido: ~0,3 s el más lento).
+PACKAGE_STUCK_AFTER_MINUTES = int(os.environ.get("PACKAGE_STUCK_AFTER_MINUTES", "5"))
 # Horas (UTC) del control de paquetes del día. El último solo alerta y deja 2 h antes de las 08:00.
 CHECK_PACKAGES_HOURS = [2, 4, 6]

@@ -58,6 +58,12 @@ class Command(BaseCommand):
             )
             self.stdout.write(f"  {', '.join(map(str, unfinished))}")
         self.stdout.write("The packages are being processed in background by the huey workers.")
+        if new_package_ids:
+            self.stdout.write(f"  enqueued: {', '.join(map(str, new_package_ids))}")
+            self.stdout.write(
+                f"Check their status with: check_package_status --from {first_date} --to {last_date} "
+                "(or with the ids above)."
+            )
 
 
 def parse_date(value):

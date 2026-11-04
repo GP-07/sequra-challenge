@@ -5,11 +5,12 @@ Las otras apps llaman a estos métodos en lugar de filtrar o actualizar el model
 
 from django.db import models
 from django.db.models import Count, Sum
+from django.db.models.functions import ExtractYear
 from django.utils import timezone
 
 from core.constants import ZERO_AMOUNT
 from disbursements.constants import DISBURSEMENT_UPDATE_BATCH_SIZE
-from disbursements.data_classes import DisbursementTotals
+from disbursements.data_classes import DisbursementTotals, YearlyDisbursementTotals
 
 
 class DisbursementQuerySet(models.QuerySet):
@@ -130,3 +131,17 @@ class DisbursementQuerySet(models.QuerySet):
 
     def failed(self):
         return self.filter(status=self.model.Status.FAILED)
+
+    # --- reporting ---
+
+    def completed_totals_by_year(self) -> dict[int, YearlyDisbursementTotals]:
+        """Una sola query: cantidad, monto pagado y comisiones de los COMPLETED por año de su fecha de pago."""
+        rows = (
+            self.filter(status=self.model.Status.COMPLETED)
+            .order_by()
+            .annotate(year=ExtractYear("payment_date"))
+            .values("year")
+            .annotate(count=Count("id"), disbursed=Sum("disbursed_amount"), fees=Sum("commission_fee_amount"))
+            .values_list("year", "count", "disbursed", "fees")
+        )
+        return {year: YearlyDisbursementTotals(count, disbursed, fees) for year, count, disbursed, fees in rows}

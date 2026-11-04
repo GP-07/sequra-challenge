@@ -1,0 +1,102 @@
+# Servicios:
+# - db y redis: Postgres y Redis (cola de huey).
+# - migrate: aplica las migraciones y termina; el worker arranca recién cuando terminó bien.
+# - worker: consumer de huey, con las periodic tasks (horarios en UTC).
+# - app (perfil tools): para correr comandos, por ejemplo
+#   docker compose run --rm app python manage.py load_merchants merchants.csv
+# - test y db_test (perfil test): tests contra un Postgres propio, en memoria y sin volumen.
+#   docker compose run --rm test
+
+x-app: &app
+  build: .
+  image: merchant-disbursements
+  environment: &app-env
+    POSTGRES_HOST: db
+    POSTGRES_DB: disbursements
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    REDIS_HOST: redis
+    HUEY_WORKERS: ${HUEY_WORKERS:-4}
+    IMPORT_DIR: /app/import_data
+  volumes:
+    # Los CSV para load_merchants y load_orders se dejan en ./import_data.
+    - ./import_data:/app/import_data
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: disbursements
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d disbursements"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  migrate:
+    <<: *app
+    command: ["python", "manage.py", "migrate"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: ["python", "manage.py", "run_huey"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  app:
+    <<: *app
+    profiles: ["tools"]
+    command: ["python", "manage.py", "help"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  db_test:
+    image: postgres:16
+    profiles: ["test"]
+    environment:
+      POSTGRES_DB: disbursements
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d disbursements"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  test:
+    <<: *app
+    profiles: ["test"]
+    environment:
+      <<: *app-env
+      POSTGRES_HOST: db_test
+    command: ["pytest", "-q"]
+    depends_on:
+      db_test:
+        condition: service_healthy
+
+volumes:
+  pgdata:
