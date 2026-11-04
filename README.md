@@ -44,6 +44,10 @@ docker compose run --rm app python manage.py retry_disbursement_package <package
   (PENDING/FAILED → PROCESSING) and calculating it are separate transactions, so the calculation is
   rolled back but the status stays. `release_stuck_packages` moves those packages to FAILED
   (retryable), so they can be retried with `retry_disbursement_package`.
+- The daily package check (02:00, 04:00 and 06:00 UTC) does the same for the packages of the day
+  before deciding anything else: a released package is retried in that same run, like any other
+  retryable failure, or raises a critical alert if it is the last run. Packages left in PENDING
+  (enqueued but never picked up by a worker) are not covered yet.
 - It never touches a package a live worker is processing: the calculation transaction holds a lock
   on the package row (`SELECT ... FOR UPDATE`) until it ends, and the release looks for packages with
   `FOR UPDATE SKIP LOCKED`. When a worker dies, PostgreSQL releases its lock. On top of that, a

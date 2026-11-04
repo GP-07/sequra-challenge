@@ -3,15 +3,18 @@
 - COMPLETED, FAILED no retryable y FAILED en el último horario son finales.
 - Solo FAILED retryable (con reintentos disponibles y antes del último horario) consulta
   el umbral de % de disbursements FAILED del día: si lo supera, alerta CRITICAL y no re-encola.
+- Antes de decidir, los paquetes del día trabados en PROCESSING se liberan como FAILED retryable.
 
 Cada paquete de estos tests tiene un solo disbursement, con la fecha de pago del día que se controla.
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
+from django.utils import timezone
 
+from disbursement_packages.constants import STUCK_PACKAGE_ERROR
 from disbursement_packages.models import DisbursementPackage
 from disbursement_packages.services.package_checks import check_disbursement_packages
 from disbursement_packages.tests.factories import DisbursementPackageFactory
@@ -38,6 +41,13 @@ def package_of(status, payment_date=RUN_DATE, is_retryable=None, attempts=1):
         payment_date=payment_date, status=DISBURSEMENT_STATUS[status], is_retryable=is_retryable
     )
     return DisbursementPackageFactory(disbursements=[disbursement], status=status, attempts=attempts)
+
+
+def stuck_package_of(payment_date=RUN_DATE):
+    """Paquete en PROCESSING desde hace más de PACKAGE_STUCK_AFTER_MINUTES y sin worker que lo tenga."""
+    package = package_of(Status.PROCESSING, payment_date=payment_date)
+    DisbursementPackage.objects.filter(id=package.id).update(updated_at=timezone.now() - timedelta(minutes=30))
+    return package
 
 
 @pytest.fixture(autouse=True)
@@ -140,15 +150,57 @@ def test_only_packages_of_the_run_date_are_checked():
     assert result.to_retry == [of_the_run_date.id]
 
 
-def test_pending_and_processing_packages_are_left_to_the_timeout_control(caplog):
-    package_of(Status.PENDING)
-    package_of(Status.PROCESSING)
+def test_pending_and_recently_processing_packages_are_not_touched(caplog):
+    pending = package_of(Status.PENDING)
+    processing = package_of(Status.PROCESSING)
 
     with caplog.at_level(logging.INFO):
         result = check_disbursement_packages(RUN_DATE, is_last_run=False)
 
+    assert result.released == []
     assert result.to_retry == []
     assert levels(caplog) == []
+    assert DisbursementPackage.objects.get(id=pending.id).status == Status.PENDING
+    assert DisbursementPackage.objects.get(id=processing.id).status == Status.PROCESSING
+
+
+def test_stuck_package_is_released_and_retried_in_the_same_run():
+    stuck = stuck_package_of()
+    # Para no superar el umbral: 1 de 5 disbursements del día FAILED.
+    for _ in range(4):
+        package_of(Status.COMPLETED)
+
+    result = check_disbursement_packages(RUN_DATE, is_last_run=False)
+
+    assert result.released == [stuck.id]
+    assert result.to_retry == [stuck.id]
+    assert DisbursementPackage.objects.get(id=stuck.id).status == Status.FAILED
+    disbursement = Disbursement.objects.get(package_id=stuck.id)
+    assert disbursement.status == Disbursement.Status.FAILED
+    assert disbursement.is_retryable is True
+    assert disbursement.error == STUCK_PACKAGE_ERROR
+
+
+def test_stuck_package_released_on_the_last_run_is_critical_and_not_retried(caplog):
+    stuck = stuck_package_of()
+    for _ in range(4):
+        package_of(Status.COMPLETED)
+
+    with caplog.at_level(logging.INFO):
+        result = check_disbursement_packages(RUN_DATE, is_last_run=True)
+
+    assert result.released == [stuck.id]
+    assert result.to_retry == []
+    assert levels(caplog) == [logging.CRITICAL]
+
+
+def test_stuck_package_of_another_day_is_not_released():
+    other_day = stuck_package_of(payment_date=date(2023, 2, 7))
+
+    result = check_disbursement_packages(RUN_DATE, is_last_run=False)
+
+    assert result.released == []
+    assert DisbursementPackage.objects.get(id=other_day.id).status == Status.PROCESSING
 
 
 def test_package_with_retryable_and_non_retryable_failures_alerts_and_is_retried(caplog):

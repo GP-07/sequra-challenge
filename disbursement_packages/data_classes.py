@@ -10,6 +10,8 @@ class PackagingResult:
 @dataclass
 class CheckResult:
     to_retry: list = field(default_factory=list)
+    # Paquetes trabados en PROCESSING que el control liberó antes de decidir.
+    released: list = field(default_factory=list)
 
 
 @dataclass
